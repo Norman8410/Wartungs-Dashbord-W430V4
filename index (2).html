@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Zentrales Wartungs Dashboard W430</title>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <style>
+        :root { --bosch-red: #d50000; --bosch-blue: #003a6c; --bosch-green: #008a4f; --bosch-gray: #eff1f2; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bosch-gray); margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; }
+        .top-bar { height: 45px; background: linear-gradient(90deg, #d50000 0%, #003a6c 50%, #008a4f 100%); display: flex; align-items: center; padding: 0 15px; color: white; font-weight: bold; }
+        .header { background: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .total-workload { background: var(--bosch-blue); color: white; padding: 5px 15px; border-radius: 20px; font-weight: bold; font-size: 1.1em; margin-left: 20px;}
+        .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; padding: 15px; flex: 1; overflow-y: auto; }
+        .column { background: white; border-top: 5px solid var(--bosch-blue); display: flex; flex-direction: column; overflow: hidden; border-radius: 4px; min-height: 350px; }
+        .col-header { padding: 12px; background: #f8f9fa; border-bottom: 1px solid #ddd; font-weight: bold; font-size: 1em; }
+        .col-header a { text-decoration: none; color: var(--bosch-blue); display: flex; justify-content: space-between; align-items: center; }
+        .col-header a:hover { color: var(--bosch-red); }
+        .time-badge { font-size: 0.8em; color: var(--bosch-red); background: #fff; padding: 2px 8px; border-radius: 12px; border: 1px solid #ffcccc; margin-left: 5px; }
+        .machine-list { flex: 1; overflow-y: auto; padding: 10px; }
+        .no-data { text-align: center; color: #999; padding-top: 30px; font-style: italic; font-size: 0.9em; }
+        .card { padding: 10px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #eee; }
+        .card.warning { background-color: #fff3cd; border-left: 6px solid #ffc107; }
+        .card.critical { background-color: #f8d7da; border-left: 6px solid #dc3545; }
+        .card.overdue { background-color: #f5b7b1; border-left: 6px solid #b03a2e; }
+        .card.in-progress { background-color: #d1ecf1 !important; border-left: 6px dashed #0c5460 !important; }
+        .card-info { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px; }
+        .m-id { font-weight: bold; font-size: 1.1em; } .m-rest { font-weight: bold; font-size: 1.1em; }
+        .card-actions { display: flex; gap: 5px; margin-top: 5px; }
+        select { flex: 1; padding: 4px; font-size: 0.85em; border: 1px solid rgba(0,0,0,0.2); border-radius: 4px; }
+        .btn-done { padding: 0 8px; border: 1px solid rgba(0,0,0,0.2); border-radius: 4px; cursor: pointer; background: white; color: var(--bosch-green); font-weight: bold; }
+        .btn-done.reset-mode { color: var(--bosch-red); }
+        .btn-done:disabled { opacity: 0.3; }
+        .nav-btn { padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: white; font-weight: bold; color: var(--bosch-blue); border-radius: 4px; }
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 5000; }
+        .modal-box { background: white; padding: 20px; width: 320px; border-top: 8px solid var(--bosch-red); border-radius: 4px; }
+        .form-group { margin-bottom: 12px; } .form-group input { width: 100%; padding: 8px; box-sizing: border-box; }
+        .primary-btn { background: var(--bosch-blue); color: white; border: none; width: 100%; padding: 10px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="top-bar">Zentrales Wartungs Dashboard W430</div>
+<div class="header">
+    <div style="display:flex; align-items:center;">
+        <span style="color:var(--bosch-red);font-weight:900;font-size:24px;">BOSCH</span> 
+        <div id="overall-workload" class="total-workload">Lade...</div>
+    </div>
+    <div style="display:flex; gap:10px;">
+        <button id="authBtn" class="nav-btn" onclick="toggleAuthModal()">🔑 Login</button>
+        <button class="nav-btn" onclick="openAdminModal()">⚙️ Einsteller</button>
+    </div>
+</div>
+
+<div class="dashboard-grid">
+    <div class="column"><div class="col-header"><a href="agie.html"><span>⚡ Agie</span> <div id="count-agie"></div></a></div><div class="machine-list" id="list-agie"></div></div>
+    <div class="column"><div class="col-header"><a href="unotron.html"><span>🧪 Unotron</span> <div id="count-uno"></div></a></div><div class="machine-list" id="list-uno"></div></div>
+    <div class="column"><div class="col-header"><a href="he.html"><span>⚙️ HE-Wartung</span> <div id="count-he"></div></a></div><div class="machine-list" id="list-he"></div></div>
+    <div class="column"><div class="col-header"><a href="unotron-auto.html"><span>🤖 Unotron Auto</span> <div id="count-uno-auto"></div></a></div><div class="machine-list" id="list-uno-auto"></div></div>
+    <div class="column"><div class="col-header"><a href="laser.html"><span>💡 Laser</span> <div id="count-laser"></div></a></div><div class="machine-list" id="list-laser"></div></div>
+
+    <div class="column" style="border-top-color: #17a2b8;"><div class="col-header"><a href="waschanlagen.html"><span>💧 Waschanlagen</span> <div id="count-wasch"></div></a></div><div class="machine-list" id="list-wasch"></div></div>
+    <div class="column" style="border-top-color: #fd7e14;"><div class="col-header"><a href="sichtprüfstand.html"><span>🔍 Prüfstände & NEK</span> <div id="count-pruef"></div></a></div><div class="machine-list" id="list-pruef"></div></div>
+    <div class="column" style="border-top-color: #6f42c1;"><div class="col-header"><a href="oellager.html"><span>📦 Lager & Regale</span> <div id="count-lager"></div></a></div><div class="machine-list" id="list-lager"></div></div>
+</div>
+
+<div style="background: #fff; padding: 10px; font-size: 0.8em; border-top: 1px solid #ddd; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
+    <strong>Direktlinks:</strong>
+    <a href="agie.html">Agie</a> | <a href="unotron.html">Unotron</a> | <a href="he.html">HE</a> | <a href="unotron-auto.html">Uno-Auto</a> | <a href="laser.html">Laser</a> | 
+    <a href="waschanlagen.html">Waschanlagen</a> | <a href="ministar.html">Ministar</a> | <a href="sichtprüfstand.html">Sichtprüfstand</a> | <a href="sichtprüfplatz.html">Sichtprüfplatz</a> |
+    <a href="einstellgeraet.html">NEK</a> | <a href="oellager.html">Öllager</a> | <a href="waschregal.html">Waschregal</a> | <a href="entkopplung.html">Entkopplung</a> | <a href="ablieferregal-ut.html">Ablieferregal</a>
+</div>
+
+<div id="authModal" class="modal"><div class="modal-box"><h2 id="modalTitle" style="margin-top:0;">Login</h2><div id="authError" style="color:red; font-size:0.8em; margin-bottom:5px;"></div><div class="form-group"><input type="text" id="authIdentifier" placeholder="Benutzername"></div><div id="regFields" style="display:none;"><div class="form-group"><input type="email" id="authEmail" placeholder="E-Mail"></div><div class="form-group"><input type="text" id="authInvite" placeholder="Einladungscode"></div></div><div class="form-group"><input type="password" id="authPass" placeholder="Passwort"></div><button class="primary-btn" id="mainAuthBtn" onclick="processAuth()">Anmelden</button><button class="primary-btn" style="background:none; color:var(--bosch-blue); margin-top:5px;" onclick="switchAuthMode()" id="switchBtn">Neu hier? Registrieren</button><button class="primary-btn" style="background:none; color:gray;" onclick="closeAuthModal()">Abbrechen</button></div></div>
+
+<div id="adminModal" class="modal"><div class="modal-box"><h2 style="margin-top:0;">Einsteller</h2><div id="adminLogin"><input type="password" id="AdminPWInput" placeholder="Admin Passwort" style="width:100%; padding:8px; margin-bottom:10px;"><button class="primary-btn" onclick="checkAdminPW()">OK</button></div><div id="adminContent" style="display:none;"><div id="adminEinstellerList" style="max-height:150px; overflow-y:auto; margin-bottom:10px; border:1px solid #eee; padding:5px;"></div><input type="text" id="newEinsteller" placeholder="Name Vorname" style="width:100%; padding:8px; margin-bottom:5px;"><button class="primary-btn" onclick="addEinsteller()">Hinzufügen</button></div><button class="primary-btn" style="background:none; color:gray; margin-top:10px;" onclick="closeAdminModal()">Schließen</button></div></div>
+
+<script>
+    const firebaseConfig = { apiKey: "AIzaSyD6xGCtU-felOyO_BRsFnVlB4yhC46FgYg", authDomain: "bosch-agie-wartung.firebaseapp.com", databaseURL: "https://bosch-agie-wartung-default-rtdb.europe-west1.firebasedatabase.app", projectId: "bosch-agie-wartung" };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database(), auth = firebase.auth();
+    
+    let state = { config: {}, assignments: {}, maintConfig: {}, maintenanceState: {}, maintenanceStateHE: {}, maintenanceStateUnotron: {}, maintenanceStateUnotronAuto: {}, maintenanceStateLaser: {}, maintenanceStateKW: {}, isRegMode: false };
+
+    // Verknüpfung der Seiten zu den Dashboard-Spalten
+    const kwGroups = {
+        wasch: ['silberhorn', 'ministar'],
+        pruef: ['sichtpruefstaende', 'sichtpruefplaetze', 'einstellgeraetNek'],
+        lager: ['unotronAblieferregal', 'entkopplungsregal', 'waschregal', 'oellager']
+    };
+
+    // Realtime Sync
+    db.ref().on('value', snap => {
+        const data = snap.val();
+        state.config = data.config || {};
+        state.assignments = data.assignments || {};
+        state.maintConfig = data.maintenanceConfig || {};
+        state.maintenanceState = data.maintenanceState || {};
+        state.maintenanceStateHE = data.maintenanceStateHE || {};
+        state.maintenanceStateUnotron = data.maintenanceStateUnotron || {};
+        state.maintenanceStateUnotronAuto = data.maintenanceStateUnotronAuto || {};
+        state.maintenanceStateLaser = data.maintenanceStateLaser || {};
+        state.maintenanceStateKW = data.maintenanceStateKW || {};
+        updateUI();
+    });
+
+    auth.onAuthStateChanged(user => { document.getElementById('authBtn').innerText = user ? '🔓 Logout' : '🔑 Login'; });
+
+    // --- LOGIK ---
+    function getDuration(p, t) { if(!p||p.includes("RESET")||!t)return 0; return p.split(/[\s\/,]+/).reduce((a,c)=>{let k=c.toUpperCase().trim(); if(k&&!k.startsWith("P"))k="P"+k; return a+(t[k]||0);},0); }
+    function formatTime(m){ if(m<=0)return"0m"; const d=Math.floor(m/1440),h=Math.floor((m%1440)/60),min=m%60; let p=[]; if(d>0)p.push(d+'d'); if(h>0)p.push(h+'h'); if(min>0||p.length===0)p.push(min+'m'); return p.join(' '); }
+    function getWeek() { const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+3-(d.getDay()+6)%7); const w1=new Date(d.getFullYear(),0,4); return 1+Math.round(((d-w1)/86400000-3+(w1.getDay()+6)%7)/7); }
+
+    // --- UI RENDERING ---
+    function updateUI() {
+        if (!state.maintConfig.agie) return;
+        let totalMin = 0;
+        totalMin += renderCol('list-agie', 'count-agie', state.maintenanceState, 'A-', state.maintConfig.agie);
+        totalMin += renderCol('list-uno', 'count-uno', state.maintenanceStateUnotron, 'U-', state.maintConfig.unotron);
+        totalMin += renderCol('list-he', 'count-he', state.maintenanceStateHE, 'H-', state.maintConfig.he);
+        totalMin += renderCol('list-laser', 'count-laser', state.maintenanceStateLaser, 'L-', state.maintConfig.laser);
+        
+        // Unotron Auto Sonderlogik (Summierung)
+        if (state.maintenanceStateUnotron.cloudRawData) {
+            const groups = { "100": [101,102,103,104,113,114,115,116], "200": [117,112,111,110,109,108,107,106], "300": [118,119,120,121,122,123,124,125] };
+            const autoList = Object.keys(groups).map(gId => {
+                const sum = groups[gId].reduce((a, sId) => a + (parseInt(state.maintenanceStateUnotron.cloudRawData.find(r=>r.STATIONNO==sId)?.["COUNT(*)"])||0), 0);
+                return { STATIONNO: gId, "COUNT(*)": sum };
+            });
+            totalMin += renderCol('list-uno-auto', 'count-uno-auto', {...state.maintenanceStateUnotronAuto, cloudRawData: autoList}, 'UA-', state.maintConfig.unotronAuto);
+        }
+
+        totalMin += renderColKw('list-wasch', 'count-wasch', kwGroups.wasch);
+        totalMin += renderColKw('list-pruef', 'count-pruef', kwGroups.pruef);
+        totalMin += renderColKw('list-lager', 'count-lager', kwGroups.lager);
+
+        document.getElementById('overall-workload').innerText = `Gesamtaufwand: ${formatTime(totalMin)}`;
+    }
+
+    function renderCol(listId, countId, raw, prefix, cfg) {
+        if(!raw || !raw.cloudRawData) return 0;
+        let colMin = 0;
+        const offK = prefix==='A-'?'agieOffsets':(prefix==='H-'?'heOffsets':(prefix==='L-'?'laserOffsets':'unotronOffsets'));
+        
+        // Daten aufbereiten
+        const items = raw.cloudRawData.map(item => {
+            const sId = item.StationNo || item.STATIONNO;
+            const ist = (parseInt(item.Parts || item["COUNT(*)"]) || 0) - ((raw[offK] && raw[offK][sId]) || 0);
+            const cyc = (raw.extraCycles && raw.extraCycles[sId]) || 0;
+            const step = (cfg.steps && cfg.steps[cyc]) || { target: cfg.maxLimit, pkg: "RESET" };
+            const isReset = ist >= cfg.maxLimit || (cfg.steps && cyc >= cfg.steps.length);
+            const rest = (isReset ? cfg.maxLimit : step.target) - ist;
+            const dur = getDuration(isReset ? "RESET" : step.pkg, cfg.times);
+            
+            return { sId, rest, pkg: isReset ? "WP RESET" : step.pkg, dur, isReset, totalParts: item.Parts || item["COUNT(*)"] };
+        }).filter(item => item.rest <= (cfg.warn || 5000)); // Nur anzeigen, was fällig/nah dran ist
+    
+        // Sortierung nach Dringlichkeit
+        items.sort((a, b) => a.rest - b.rest);
+    
+        // HTML generieren
+        const html = items.map(item => {
+            colMin += item.dur;
+            return buildCard(prefix, item.sId, item.rest, item.pkg, item.dur, item.isReset, item.totalParts);
+        }).join('');
+    
+        document.getElementById(listId).innerHTML = html || '<div class="no-data">Alles i.O.</div>';
+        document.getElementById(countId).innerHTML = `<span class="time-badge">${formatTime(colMin)}</span>`;
+        return colMin;
+    }
+
+    function renderColKw(listId, countId, keys) {
+        let colMin = 0; 
+        const week = getWeek(); 
+        const html = keys.map(key => {
+            const cfg = state.maintConfig[key]; if(!cfg) return '';
+            return (cfg.machines || []).map(id => {
+                const cyc = (state.maintenanceStateKW[key]?.extraCycles?.[id]) || 0;
+                const isReset = !(cfg.steps && cfg.steps[cyc]);
+                
+                const targetKW = isReset ? (cfg.yearlyResetWeek || 52) : cfg.steps[cyc].target;
+                const rest = targetKW - week;
+    
+                if (rest > (cfg.warnWeeks || 4)) return null;
+                
+                const dur = getDuration(isReset ? "RESET" : cfg.steps[cyc].pkg, cfg.times);
+                colMin += dur;
+    
+                // Farblogik festlegen
+                let urgentClass = '';
+                if (rest < 0) {
+                    urgentClass = 'overdue'; // Rot (Stil in deiner CSS meist .overdue)
+                } else if (rest === 0) {
+                    urgentClass = 'critical'; // Gelb (Stil in deiner CSS meist .critical)
+                }
+    
+                const statusText = rest < 0 
+                    ? `fällig seit KW ${targetKW}` 
+                    : `fällig in KW ${targetKW}`;
+                
+                const combinedInfo = `
+                    <div style="text-align: left; padding-left: 5px;">
+                        <div style="font-weight: bold; font-size: 1.1em;">${cfg.prefix || ''}${id}</div>
+                        <div style="font-size: 0.75em; white-space: nowrap;">
+                            Aktuell: KW ${week} | ${statusText}
+                        </div>
+                    </div>
+                `;
+    
+                // Wir übergeben die urgentClass an buildCard, damit die Karte die richtige Farbe bekommt
+                return buildCard('', '', combinedInfo, isReset ? "JAHRES-RESET" : cfg.steps[cyc].pkg, dur, isReset, null, key, urgentClass);
+            }).filter(x=>x).join('');
+        }).join('');
+    
+        document.getElementById(listId).innerHTML = html || '<div class="no-data">Alles i.O.</div>';
+        document.getElementById(countId).innerHTML = `<span class="time-badge">${formatTime(colMin)}</span>`;
+        return colMin;
+    }
+
+    function buildCard(pre, id, rest, pkg, dur, isReset, rawTotal, kwKey, urgentClass) {
+        const fullId = pre + id;
+        const ass = state.assignments[fullId] || "";
+        
+        // Die Farbe wird nun primär über urgentClass (aus der render-Funktion) gesteuert,
+        // ansonsten fällt sie auf den Standard (overdue/warning) zurück.
+        const cls = urgentClass ? urgentClass : (parseInt(rest) <= 0 ? 'overdue' : 'warning');
+    
+        return `<div class="card ${cls} ${ass ? 'in-progress' : ''}">
+            <div class="card-info" style="display: block; text-align: left; padding: 2px 5px;">
+                <div class="m-id" style="font-weight: bold; font-size: 1.1em;">${fullId || rest}</div>
+                ${fullId ? `<div class="m-rest" style="font-size: 0.75em; margin-top: 2px;">${rest}</div>` : ''}
+            </div>
+            <div style="font-size:0.85em; margin: 5px 5px; text-align: left;">${pkg} (ca. ${dur}m)</div>
+            <div class="card-actions">
+                <select onchange="db.ref('assignments/${fullId}').set(this.value)">
+                    <option value="">--</option>
+                    ${(state.config.einstellerListe || []).map(e => `<option value="${e}" ${ass===e?'selected':''}>${e}</option>`).join('')}
+                </select>
+                <button class="btn-done ${isReset?'reset-mode':''}" ${!auth.currentUser || !ass ? 'disabled' : ''} 
+                    onclick="handleMaint('${pre}','${id}',${isReset},${rawTotal},${kwKey ? `'${kwKey}'` : 'null'})">${isReset?'🔄':'✅'}</button>
+            </div>
+        </div>`;
+    }
+
+    // --- AKTIONEN ---
+async function handleMaint(pre, id, isReset, rawTotal, kwKey) {
+    if (!auth.currentUser) return;
+    const fullId = pre + id;
+    const week = getWeek(); 
+
+    try {
+        if (kwKey) {
+            // Passt zur neuen JSON-Struktur unter maintenanceStateKW
+            const baseRef = db.ref(`maintenanceStateKW/${kwKey}`);
+            await baseRef.child('lastWartungKW').child(id).set(week);
+            await baseRef.child('extraCycles').child(id).set(0);
+        } else {
+            // Passt zur Struktur unter maintenanceState (z.B. agieOffsets)
+            const offK = pre === 'A-' ? 'agieOffsets' : 
+                         pre === 'H-' ? 'heOffsets' : 
+                         pre === 'L-' ? 'laserOffsets' : 'unotronOffsets';
+            
+            await db.ref(`maintenanceState/${offK}/${id}`).set(rawTotal);
+            await db.ref(`maintenanceState/extraCycles/${id}`).set(0);
+        }
+
+        // Bearbeiter entfernen
+        await db.ref(`assignments/${fullId}`).remove();
+        alert("Erfolgreich gespeichert!");
+    } catch (e) {
+        console.error("Fehler:", e);
+        alert("Speichern fehlgeschlagen!");
+    }
+}
+
+    // Auth & Admin Modals
+    function toggleAuthModal() { if(auth.currentUser) auth.signOut(); else document.getElementById('authModal').style.display='flex'; }
+    function closeAuthModal() { document.getElementById('authModal').style.display='none'; }
+    function switchAuthMode() { state.isRegMode = !state.isRegMode; document.getElementById('regFields').style.display = state.isRegMode?'block':'none'; document.getElementById('modalTitle').innerText = state.isRegMode?'Registrieren':'Login'; }
+    async function processAuth() {
+        const iden = document.getElementById('authIdentifier').value.trim();
+        const pass = document.getElementById('authPass').value;
+        try {
+            if(state.isRegMode) {
+                if(document.getElementById('authInvite').value !== state.config.inviteCode) throw new Error("Code falsch");
+                await auth.createUserWithEmailAndPassword(document.getElementById('authEmail').value, pass);
+                await db.ref(`usernames/${iden.toLowerCase()}`).set(document.getElementById('authEmail').value);
+            } else {
+                let mail = iden; if(!iden.includes('@')) mail = (await db.ref(`usernames/${iden.toLowerCase()}`).once('value')).val();
+                await auth.signInWithEmailAndPassword(mail, pass);
+            }
+            closeAuthModal();
+        } catch(e) { alert(e.message); }
+    }
+    function openAdminModal() { document.getElementById('adminModal').style.display='flex'; }
+    function closeAdminModal() { document.getElementById('adminModal').style.display='none'; }
+    async function checkAdminPW() { if(document.getElementById('AdminPWInput').value === state.config.AdminPW) { document.getElementById('adminLogin').style.display='none'; document.getElementById('adminContent').style.display='block'; renderAdminList(); } }
+    function renderAdminList() { document.getElementById('adminEinstellerList').innerHTML = (state.config.einstellerListe || []).map(e => `<div>${e} <span style="color:red; cursor:pointer;" onclick="removeEinsteller('${e}')">[X]</span></div>`).join(''); }
+    async function addEinsteller() { const val = document.getElementById('newEinsteller').value.trim(); if(val) { await db.ref('config/einstellerListe').set([...(state.config.einstellerListe || []), val]); renderAdminList(); } }
+    async function removeEinsteller(name) { await db.ref('config/einstellerListe').set(state.config.einstellerListe.filter(e => e !== name)); renderAdminList(); }
+</script>
+</body>
+</html>
