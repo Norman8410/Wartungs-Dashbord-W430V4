@@ -94,7 +94,7 @@
     db.ref().on('value', snap => {
         const data = snap.val();
         state.config = data.config || {};
-        state.assignments = data.assignments || {};
+        state.assignments = data.dashboardAssignments || {};
         state.maintConfig = data.maintenanceConfig || {};
         state.maintenanceState = data.maintenanceState || {};
         state.maintenanceStateHE = data.maintenanceStateHE || {};
