@@ -108,7 +108,21 @@
     auth.onAuthStateChanged(user => { document.getElementById('authBtn').innerText = user ? '🔓 Logout' : '🔑 Login'; });
 
     // --- LOGIK ---
-    function getDuration(p, t) { if(!p||p.includes("RESET")||!t)return 0; return p.split(/[\s\/,]+/).reduce((a,c)=>{let k=c.toUpperCase().trim(); if(k&&!k.startsWith("P"))k="P"+k; return a+(t[k]||0);},0); }
+    function getDuration(pkgString, timeTable) {
+        // Sicherheitscheck: Wenn kein Paket oder Reset, dann 0 Minuten
+        if (!pkgString || pkgString.includes("RESET") || pkgString.includes("AUSTAUSCH") || !timeTable) return 0;
+        
+        // Trennt bei "/", Komma oder Leerzeichen
+        return pkgString.split(/[\/\s,]+/).reduce((acc, p) => {
+            let key = p.toUpperCase().trim(); 
+            if (!key) return acc;
+            // Wenn das "P" fehlt (z.B. "1"), setze es davor ("P1")
+            if (!key.startsWith("P")) key = "P" + key;
+            
+            // Addiere die Zeit aus der Config, oder 0 wenn nicht gefunden
+            return acc + (parseInt(timeTable[key]) || 0);
+        }, 0);
+    }
     function formatTime(m){ if(m<=0)return"0m"; const d=Math.floor(m/1440),h=Math.floor((m%1440)/60),min=m%60; let p=[]; if(d>0)p.push(d+'d'); if(h>0)p.push(h+'h'); if(min>0||p.length===0)p.push(min+'m'); return p.join(' '); }
     function getWeek() { const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+3-(d.getDay()+6)%7); const w1=new Date(d.getFullYear(),0,4); return 1+Math.round(((d-w1)/86400000-3+(w1.getDay()+6)%7)/7); }
 
@@ -233,7 +247,7 @@
             </div>
             <div style="font-size:0.85em; margin: 5px 5px; text-align: left;">${pkg} (ca. ${dur}m)</div>
             <div class="card-actions">
-                <select onchange="db.ref('assignments/${fullId}').set(this.value)">
+                <select onchange="db.ref('dashboardAssignments/${fullId}').set(this.value)">
                     <option value="">--</option>
                     ${(state.config.einstellerListe || []).map(e => `<option value="${e}" ${ass===e?'selected':''}>${e}</option>`).join('')}
                 </select>
@@ -244,33 +258,70 @@
     }
 
     // --- AKTIONEN ---
+// --- KORRIGIERTE HAUPTFUNKTION FÜR INDEX.HTML ---
 async function handleMaint(pre, id, isReset, rawTotal, kwKey) {
     if (!auth.currentUser) return;
-    const fullId = pre + id;
-    const week = getWeek(); 
+    
+    // 1. Pfad-Ermittlung: Wo liegen die Daten für diese Maschine?
+    let rootPath = 'maintenanceState'; // Fallback (z.B. für Agie)
+    let offsetKey = 'agieOffsets';     // Fallback
+    
+    // Wir entscheiden anhand des Präfix oder des kwKey
+    if (kwKey) {
+        // KW-basierte Maschinen (Waschanlagen, Regale, Prüfstände)
+        // Laut JSON liegen diese unter "maintenanceStateKW"
+        rootPath = `maintenanceStateKW/${kwKey}`;
+    } else {
+        // Stückzahl-basierte Maschinen
+        if (pre === 'H-') { rootPath = 'maintenanceStateHE'; offsetKey = 'heOffsets'; }
+        else if (pre === 'L-') { rootPath = 'maintenanceStateLaser'; offsetKey = 'laserOffsets'; }
+        else if (pre === 'U-') { rootPath = 'maintenanceStateUnotron'; offsetKey = 'unotronOffsets'; }
+        else if (pre === 'UA-') { rootPath = 'maintenanceStateUnotronAuto'; offsetKey = 'unotronOffsets'; }
+        // Agie (A-) bleibt beim Default 'maintenanceState'
+    }
 
     try {
         if (kwKey) {
-            // Passt zur neuen JSON-Struktur unter maintenanceStateKW
-            const baseRef = db.ref(`maintenanceStateKW/${kwKey}`);
-            await baseRef.child('lastWartungKW').child(id).set(week);
-            await baseRef.child('extraCycles').child(id).set(0);
-        } else {
-            // Passt zur Struktur unter maintenanceState (z.B. agieOffsets)
-            const offK = pre === 'A-' ? 'agieOffsets' : 
-                         pre === 'H-' ? 'heOffsets' : 
-                         pre === 'L-' ? 'laserOffsets' : 'unotronOffsets';
+            // LOGIK FÜR KW-ANLAGEN (Zeitbasiert)
+            // Hier zählen wir einfach den Zyklus hoch oder setzen ihn zurück
+            const cyclePath = `${rootPath}/extraCycles/${id}`;
             
-            await db.ref(`maintenanceState/${offK}/${id}`).set(rawTotal);
-            await db.ref(`maintenanceState/extraCycles/${id}`).set(0);
+            if (isReset) {
+                await db.ref(cyclePath).set(0);
+            } else {
+                const snap = await db.ref(cyclePath).once('value');
+                let current = parseInt(snap.val()) || 0;
+                await db.ref(cyclePath).set(current + 1);
+            }
+        } else {
+            // LOGIK FÜR STÜCKZAHL-ANLAGEN (Agie, HE, Laser, Unotron)
+            const cyclePath = `${rootPath}/extraCycles/${id}`;
+            const offsetPath = `${rootPath}/${offsetKey}/${id}`;
+
+            if (isReset) {
+                // Bei Reset: Aktuellen Zählerstand als neuen Offset speichern & Zyklus nullen
+                await db.ref(offsetPath).set(rawTotal);
+                await db.ref(cyclePath).set(0);
+            } else {
+                // Bei Wartung: Nur Zyklus hochzählen
+                const snap = await db.ref(cyclePath).once('value');
+                let current = parseInt(snap.val()) || 0;
+                await db.ref(cyclePath).set(current + 1);
+            }
         }
 
-        // Bearbeiter entfernen
-        await db.ref(`assignments/${fullId}`).remove();
-        alert("Erfolgreich gespeichert!");
+        // 2. Zuweisung entfernen (KORREKTUR: Pfad 'dashboardAssignments' statt 'assignments')
+        // Wir nutzen pre+id (z.B. "A44" oder "HE22") als Key
+        const cleanId = pre + id; 
+        await db.ref(`dashboardAssignments/${cleanId}`).remove();
+        
+        // Log Eintrag (Optional, aber gut für Nachvollziehbarkeit)
+        console.log(`Erfolg: ${cleanId} in ${rootPath} aktualisiert.`);
+        alert("Wartung erfolgreich gespeichert!");
+
     } catch (e) {
-        console.error("Fehler:", e);
-        alert("Speichern fehlgeschlagen!");
+        console.error("Fehler beim Speichern:", e);
+        alert("Fehler: " + e.message);
     }
 }
 
