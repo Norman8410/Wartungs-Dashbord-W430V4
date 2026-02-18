@@ -184,46 +184,51 @@
         return colMin;
     }
 
-    function renderColKw(listId, countId, keys) {
+function renderColKw(listId, countId, keys) {
         let colMin = 0; 
         const week = getWeek(); 
+        
         const html = keys.map(key => {
             const cfg = state.maintConfig[key]; if(!cfg) return '';
+            
             return (cfg.machines || []).map(id => {
-                const cyc = (state.maintenanceStateKW[key]?.extraCycles?.[id]) || 0;
-                const isReset = !(cfg.steps && cfg.steps[cyc]);
+                // Zugriff auf maintenanceStateKW statt maintenanceState, falls nötig
+                // Wir nutzen hier flexibel das, was im state geladen wurde
+                const dataRoot = state.maintenanceStateKW && state.maintenanceStateKW[key] 
+                               ? state.maintenanceStateKW[key] 
+                               : (state.maintenanceState[key] || {});
+
+                const cyc = (dataRoot.extraCycles && dataRoot.extraCycles[id]) || 0;
                 
-                const targetKW = isReset ? (cfg.yearlyResetWeek || 52) : cfg.steps[cyc].target;
+                // Prüfen ob Schritte definiert sind, sonst Fallback
+                const stepDef = cfg.steps && cfg.steps[cyc];
+                const isReset = !stepDef;
+                
+                const targetKW = isReset ? (cfg.yearlyResetWeek || 52) : stepDef.target;
                 const rest = targetKW - week;
     
+                // Filter: Nur anzeigen, wenn Warnwoche erreicht
                 if (rest > (cfg.warnWeeks || 4)) return null;
                 
-                const dur = getDuration(isReset ? "RESET" : cfg.steps[cyc].pkg, cfg.times);
+                const pkgName = isReset ? "JAHRES-RESET" : stepDef.pkg;
+                const dur = getDuration(pkgName, cfg.times);
                 colMin += dur;
     
-                // Farblogik festlegen
+                // Farblogik
                 let urgentClass = '';
-                if (rest < 0) {
-                    urgentClass = 'overdue'; // Rot (Stil in deiner CSS meist .overdue)
-                } else if (rest === 0) {
-                    urgentClass = 'critical'; // Gelb (Stil in deiner CSS meist .critical)
-                }
+                if (rest < 0) urgentClass = 'overdue';
+                else if (rest === 0) urgentClass = 'critical';
     
                 const statusText = rest < 0 
-                    ? `fällig seit KW ${targetKW}` 
+                    ? `fällig seit KW ${targetKW} (Aktuell: ${week})` 
                     : `fällig in KW ${targetKW}`;
                 
-                const combinedInfo = `
-                    <div style="text-align: left; padding-left: 5px;">
-                        <div style="font-weight: bold; font-size: 1.1em;">${cfg.prefix || ''}${id}</div>
-                        <div style="font-size: 0.75em; white-space: nowrap;">
-                            Aktuell: KW ${week} | ${statusText}
-                        </div>
-                    </div>
-                `;
-    
-                // Wir übergeben die urgentClass an buildCard, damit die Karte die richtige Farbe bekommt
-                return buildCard('', '', combinedInfo, isReset ? "JAHRES-RESET" : cfg.steps[cyc].pkg, dur, isReset, null, key, urgentClass);
+                // KORREKTUR HIER:
+                // Wir übergeben jetzt cfg.prefix und id explizit!
+                // Dadurch entsteht eine ID wie "S-1" oder "ER-1", die eindeutig ist.
+                // Das verhindert das Überschreiben der Datenbank.
+                return buildCard(cfg.prefix || '', id, statusText, pkgName, dur, isReset, null, key, urgentClass);
+
             }).filter(x=>x).join('');
         }).join('');
     
