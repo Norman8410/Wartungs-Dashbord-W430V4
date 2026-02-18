@@ -7,6 +7,48 @@
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
     <style>
+        /* Styles für das Hamburger Menü */
+        .menu-btn {
+            background: none; border: none; font-size: 1.2em; cursor: pointer; color: var(--bosch-blue); padding: 0 5px;
+        }
+        .menu-btn:hover { color: var(--bosch-red); }
+        
+        .dropdown { position: relative; display: inline-block; margin-left: auto; }
+        
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: 100%;
+            background-color: #f9f9f9;
+            min-width: 160px;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+            z-index: 10;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        
+        .dropdown-content a {
+            color: black;
+            padding: 12px 16px;
+            text-decoration: none;
+            display: block;
+            font-size: 0.9em;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .dropdown-content a:last-child { border-bottom: none; }
+        .dropdown-content a:hover { background-color: #f1f1f1; color: var(--bosch-red); }
+        .show { display: block; }
+        
+        /* Anpassung Header Layout */
+        .col-header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            padding: 10px 15px;
+        }
+        .col-title { display: flex; align-items: center; gap: 8px; font-weight: bold; color: var(--bosch-blue); text-decoration: none; }
         :root { --bosch-red: #d50000; --bosch-blue: #003a6c; --bosch-green: #008a4f; --bosch-gray: #eff1f2; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bosch-gray); margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; }
         .top-bar { height: 45px; background: linear-gradient(90deg, #d50000 0%, #003a6c 50%, #008a4f 100%); display: flex; align-items: center; padding: 0 15px; color: white; font-weight: bold; }
@@ -54,15 +96,115 @@
 </div>
 
 <div class="dashboard-grid">
-    <div class="column"><div class="col-header"><a href="agie.html"><span>⚡ Agie</span> <div id="count-agie"></div></a></div><div class="machine-list" id="list-agie"></div></div>
-    <div class="column"><div class="col-header"><a href="unotron.html"><span>🧪 Unotron</span> <div id="count-uno"></div></a></div><div class="machine-list" id="list-uno"></div></div>
-    <div class="column"><div class="col-header"><a href="he.html"><span>⚙️ HE-Wartung</span> <div id="count-he"></div></a></div><div class="machine-list" id="list-he"></div></div>
-    <div class="column"><div class="col-header"><a href="unotron-auto.html"><span>🤖 Unotron Auto</span> <div id="count-uno-auto"></div></a></div><div class="machine-list" id="list-uno-auto"></div></div>
-    <div class="column"><div class="col-header"><a href="laser.html"><span>💡 Laser</span> <div id="count-laser"></div></a></div><div class="machine-list" id="list-laser"></div></div>
+    <div class="column">
+        <div class="col-header">
+            <a href="agie.html" class="col-title"><span>⚡ Agie</span> <div id="count-agie"></div></a>
+            <div class="dropdown">
+                <button onclick="toggleMenu('menu-agie')" class="menu-btn">☰</button>
+                <div id="menu-agie" class="dropdown-content">
+                    <a href="agie.html">Agie Detailansicht</a>
+                </div>
+            </div>
+        </div>
+        <div class="machine-list" id="list-agie"></div>
+    </div>
 
-    <div class="column" style="border-top-color: #17a2b8;"><div class="col-header"><a href="waschanlagen.html"><span>💧 Waschanlagen</span> <div id="count-wasch"></div></a></div><div class="machine-list" id="list-wasch"></div></div>
-    <div class="column" style="border-top-color: #fd7e14;"><div class="col-header"><a href="sichtprüfstand.html"><span>🔍 Prüfstände & NEK</span> <div id="count-pruef"></div></a></div><div class="machine-list" id="list-pruef"></div></div>
-    <div class="column" style="border-top-color: #6f42c1;"><div class="col-header"><a href="oellager.html"><span>📦 Lager & Regale</span> <div id="count-lager"></div></a></div><div class="machine-list" id="list-lager"></div></div>
+    <div class="column">
+        <div class="col-header">
+            <a href="unotron.html" class="col-title"><span>🧪 Unotron</span> <div id="count-uno"></div></a>
+            <div class="dropdown">
+                <button onclick="toggleMenu('menu-uno')" class="menu-btn">☰</button>
+                <div id="menu-uno" class="dropdown-content">
+                    <a href="unotron.html">Unotron Detailansicht</a>
+                </div>
+            </div>
+        </div>
+        <div class="machine-list" id="list-uno"></div>
+    </div>
+
+    <div class="column">
+        <div class="col-header">
+            <a href="he.html" class="col-title"><span>⚙️ HE-Wartung</span> <div id="count-he"></div></a>
+            <div class="dropdown">
+                <button onclick="toggleMenu('menu-he')" class="menu-btn">☰</button>
+                <div id="menu-he" class="dropdown-content">
+                    <a href="he.html">HE Detailansicht</a>
+                </div>
+            </div>
+        </div>
+        <div class="machine-list" id="list-he"></div>
+    </div>
+
+    <div class="column">
+        <div class="col-header">
+            <a href="unotron-auto.html" class="col-title"><span>🤖 Unotron Auto</span> <div id="count-uno-auto"></div></a>
+            <div class="dropdown">
+                <button onclick="toggleMenu('menu-ua')" class="menu-btn">☰</button>
+                <div id="menu-ua" class="dropdown-content">
+                    <a href="unotron-auto.html">Handling Detailansicht</a>
+                </div>
+            </div>
+        </div>
+        <div class="machine-list" id="list-uno-auto"></div>
+    </div>
+
+    <div class="column">
+        <div class="col-header">
+            <a href="laser.html" class="col-title"><span>💡 Laser</span> <div id="count-laser"></div></a>
+            <div class="dropdown">
+                <button onclick="toggleMenu('menu-laser')" class="menu-btn">☰</button>
+                <div id="menu-laser" class="dropdown-content">
+                    <a href="laser.html">Laser Detailansicht</a>
+                </div>
+            </div>
+        </div>
+        <div class="machine-list" id="list-laser"></div>
+    </div>
+
+    <div class="column" style="border-top-color: #17a2b8;">
+        <div class="col-header">
+            <span class="col-title"><span>💧 Waschanlagen</span> <div id="count-wasch"></div></span>
+            <div class="dropdown">
+                <button onclick="toggleMenu('menu-wasch')" class="menu-btn">☰</button>
+                <div id="menu-wasch" class="dropdown-content">
+                    <a href="waschanlagen.html">Linienwaschanlage (Silberhorn)</a>
+                    <a href="ministar.html">Ministar (Linie 6)</a>
+                </div>
+            </div>
+        </div>
+        <div class="machine-list" id="list-wasch"></div>
+    </div>
+
+    <div class="column" style="border-top-color: #fd7e14;">
+        <div class="col-header">
+            <span class="col-title"><span>🔍 Prüfstände & NEK</span> <div id="count-pruef"></div></span>
+            <div class="dropdown">
+                <button onclick="toggleMenu('menu-pruef')" class="menu-btn">☰</button>
+                <div id="menu-pruef" class="dropdown-content">
+                    <a href="sichtprüfstand.html">Sichtprüfstände</a>
+                    <a href="sichtprüfplatz.html">Sichtprüfplätze</a>
+                    <a href="einstellgeraet.html">Einstellgerät NEK</a>
+                </div>
+            </div>
+        </div>
+        <div class="machine-list" id="list-pruef"></div>
+    </div>
+
+    <div class="column" style="border-top-color: #6f42c1;">
+        <div class="col-header">
+            <span class="col-title"><span>📦 Lager & Regale</span> <div id="count-lager"></div></span>
+            <div class="dropdown">
+                <button onclick="toggleMenu('menu-lager')" class="menu-btn">☰</button>
+                <div id="menu-lager" class="dropdown-content">
+                    <a href="oellager.html">Öllager</a>
+                    <a href="waschregal.html">Waschregal</a>
+                    <a href="entkopplung.html">Entkopplungsregal</a>
+                    <a href="ablieferregal-ut.html">Ablieferregal Unotron</a>
+                </div>
+            </div>
+        </div>
+        <div class="machine-list" id="list-lager"></div>
+    </div>
 </div>
 
 <div style="background: #fff; padding: 10px; font-size: 0.8em; border-top: 1px solid #ddd; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
@@ -107,6 +249,31 @@
 
     auth.onAuthStateChanged(user => { document.getElementById('authBtn').innerText = user ? '🔓 Logout' : '🔑 Login'; });
 
+    // Menü Funktion
+    function toggleMenu(id) {
+        // Alle anderen offenen Menüs schließen
+        const dropdowns = document.getElementsByClassName("dropdown-content");
+        for (let i = 0; i < dropdowns.length; i++) {
+            if (dropdowns[i].id !== id) {
+                dropdowns[i].classList.remove('show');
+            }
+        }
+        // Gewünschtes Menü umschalten
+        document.getElementById(id).classList.toggle("show");
+    }
+    
+    // Schließen wenn man daneben klickt
+    window.onclick = function(event) {
+      if (!event.target.matches('.menu-btn')) {
+        const dropdowns = document.getElementsByClassName("dropdown-content");
+        for (let i = 0; i < dropdowns.length; i++) {
+          const openDropdown = dropdowns[i];
+          if (openDropdown.classList.contains('show')) {
+            openDropdown.classList.remove('show');
+          }
+        }
+      }
+    }
     // --- LOGIK ---
     function getDuration(pkgString, timeTable) {
         // Sicherheitscheck: Wenn kein Paket oder Reset, dann 0 Minuten
