@@ -258,7 +258,51 @@
         updateUI();
     });
 
-    auth.onAuthStateChanged(user => { document.getElementById('authBtn').innerText = user ? '🔓 Logout' : '🔑 Login'; });
+    // --- LOGIN & LOGOUT TIMER LOGIK ---
+    let logoutInterval = null;
+
+    auth.onAuthStateChanged(user => { 
+        const authBtn = document.getElementById('authBtn');
+        const freigabeBtn = document.getElementById('freigabeBtn');
+
+        if (user) {
+            // Wenn eingeloggt: Zeige Freigabe-Button und starte Logout-Timer
+            freigabeBtn.style.display = 'block';
+            startLogoutCountdown();
+        } else {
+            // Wenn ausgeloggt: Verstecke Button, stoppe Timer, sperre Dropdowns
+            authBtn.innerText = '🔑 Login';
+            freigabeBtn.style.display = 'none';
+            clearInterval(logoutInterval);
+            lockAssignments();
+            updateUI(); // UI updaten, damit Buttons gesperrt werden
+        }
+    });
+
+    function startLogoutCountdown() {
+        clearInterval(logoutInterval);
+        let seconds = 50; // 50 Sekunden bis zum automatischen Logout
+        
+        const btn = document.getElementById('authBtn');
+        btn.innerText = `🔓 Logout (${seconds}s)`;
+
+        logoutInterval = setInterval(() => {
+            seconds--;
+            if (seconds <= 0) {
+                clearInterval(logoutInterval);
+                auth.signOut(); // Automatischer Logout!
+            } else {
+                btn.innerText = `🔓 Logout (${seconds}s)`;
+            }
+        }, 1000);
+    }
+
+    // Diese Funktion rufen wir auf, wenn der User aktiv etwas arbeitet
+    function resetLogoutTimer() {
+        if (auth.currentUser) {
+            startLogoutCountdown();
+        }
+    }
 
     // Menü Funktion
     function toggleMenu(id) {
@@ -375,6 +419,7 @@
     // Eigene Funktion zum Speichern, damit der Timer bei Auswahl resettet wird
     function handleAssignmentChange(fullId, value) {
         db.ref(`dashboardAssignments/${fullId}`).set(value);
+        resetLogoutTimer(); // <--- NEU: Logout-Timer zurücksetzen
         if (isAssignmentUnlocked) {
             startCountdown(); // Timer bei jeder Auswahl wieder auf 50s setzen!
         }
@@ -511,7 +556,7 @@ function renderColKw(listId, countId, keys) {
                     <option value="">--</option>
                     ${(state.config.einstellerListe || []).map(e => `<option value="${e}" ${ass===e?'selected':''}>${e}</option>`).join('')}
                 </select>
-                <button class="btn-done ${isReset?'reset-mode':''}" ${!auth.currentUser || !ass ? 'disabled' : ''} 
+                <button class="btn-done ${isReset?'reset-mode':''}" ${!auth.currentUser ? 'disabled' : ''} 
                     onclick="handleMaint('${pre}','${id}',${isReset},${rawTotal},${kwKey ? `'${kwKey}'` : 'null'})">${isReset?'🔄':'✅'}</button>
             </div>
         </div>`;
@@ -521,6 +566,7 @@ function renderColKw(listId, countId, keys) {
 // --- KORRIGIERTE HAUPTFUNKTION FÜR INDEX.HTML ---
 async function handleMaint(pre, id, isReset, rawTotal, kwKey) {
     if (!auth.currentUser) return;
+    resetLogoutTimer(); // <--- NEU: Logout-Timer zurücksetzen, da der User gerade gearbeitet hat!
     
     // 1. Pfad-Ermittlung: Wo liegen die Daten für diese Maschine?
     let rootPath = 'maintenanceState'; // Fallback (z.B. für Agie)
