@@ -90,6 +90,8 @@
         <div id="overall-workload" class="total-workload">Lade...</div>
     </div>
     <div style="display:flex; gap:10px;">
+        <button id="freigabeBtn" class="nav-btn" style="display:none;" onclick="openFreigabeModal()">Freigabe Einteilung</button>
+        
         <button id="authBtn" class="nav-btn" onclick="toggleAuthModal()">🔑 Login</button>
         <button class="nav-btn" onclick="openAdminModal()">⚙️ Einsteller</button>
     </div>
@@ -218,6 +220,15 @@
 
 <div id="adminModal" class="modal"><div class="modal-box"><h2 style="margin-top:0;">Einsteller</h2><div id="adminLogin"><input type="password" id="AdminPWInput" placeholder="Admin Passwort" style="width:100%; padding:8px; margin-bottom:10px;"><button class="primary-btn" onclick="checkAdminPW()">OK</button></div><div id="adminContent" style="display:none;"><div id="adminEinstellerList" style="max-height:150px; overflow-y:auto; margin-bottom:10px; border:1px solid #eee; padding:5px;"></div><input type="text" id="newEinsteller" placeholder="Name Vorname" style="width:100%; padding:8px; margin-bottom:5px;"><button class="primary-btn" onclick="addEinsteller()">Hinzufügen</button></div><button class="primary-btn" style="background:none; color:gray; margin-top:10px;" onclick="closeAdminModal()">Schließen</button></div></div>
 
+<div id="freigabeModal" class="modal">
+    <div class="modal-box">
+        <h2 style="margin-top:0;">Freigabe</h2>
+        <input type="password" id="freigabePass" placeholder="Tel-Passwort" style="width:100%; padding:8px; margin-bottom:10px;">
+        <button class="primary-btn" onclick="checkFreigabePW()">Freigeben</button>
+        <button class="primary-btn" style="background:none; color:gray; margin-top:10px;" onclick="closeFreigabeModal()">Abbrechen</button>
+    </div>
+</div>
+
 <script>
     const firebaseConfig = { apiKey: "AIzaSyD6xGCtU-felOyO_BRsFnVlB4yhC46FgYg", authDomain: "bosch-agie-wartung.firebaseapp.com", databaseURL: "https://bosch-agie-wartung-default-rtdb.europe-west1.firebasedatabase.app", projectId: "bosch-agie-wartung" };
     firebase.initializeApp(firebaseConfig);
@@ -293,6 +304,83 @@
     function formatTime(m){ if(m<=0)return"0m"; const d=Math.floor(m/1440),h=Math.floor((m%1440)/60),min=m%60; let p=[]; if(d>0)p.push(d+'d'); if(h>0)p.push(h+'h'); if(min>0||p.length===0)p.push(min+'m'); return p.join(' '); }
     function getWeek() { const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+3-(d.getDay()+6)%7); const w1=new Date(d.getFullYear(),0,4); return 1+Math.round(((d-w1)/86400000-3+(w1.getDay()+6)%7)/7); }
 
+    // --- FREIGABE LOGIK ---
+    let isAssignmentUnlocked = false;
+    let countdownInterval = null;
+
+    // Login-Status prüfen und Button einblenden/ausblenden
+    auth.onAuthStateChanged(user => { 
+        document.getElementById('authBtn').innerText = user ? '🔓 Logout' : '🔑 Login'; 
+        document.getElementById('freigabeBtn').style.display = user ? 'block' : 'none';
+        if (!user) lockAssignments(); // Beim Logout sofort sperren
+    });
+
+    function openFreigabeModal() {
+        document.getElementById('freigabeModal').style.display = 'flex';
+        document.getElementById('freigabePass').value = '';
+        setTimeout(() => document.getElementById('freigabePass').focus(), 100);
+    }
+
+    function closeFreigabeModal() {
+        document.getElementById('freigabeModal').style.display = 'none';
+    }
+
+    function checkFreigabePW() {
+        const pw = document.getElementById('freigabePass').value;
+        if (pw === state.config.TelPW) {
+            closeFreigabeModal();
+            unlockAssignments();
+        } else {
+            alert("Falsches Passwort!");
+        }
+    }
+
+    function unlockAssignments() {
+        isAssignmentUnlocked = true;
+        updateUI(); // UI neu laden, damit Dropdowns aktiv werden
+        startCountdown();
+    }
+
+    function lockAssignments() {
+        isAssignmentUnlocked = false;
+        clearInterval(countdownInterval);
+        
+        const btn = document.getElementById('freigabeBtn');
+        btn.innerText = "Freigabe Einteilung";
+        btn.style.backgroundColor = 'white';
+        btn.style.color = 'var(--bosch-blue)';
+        
+        updateUI(); // UI neu laden, um Dropdowns zu sperren
+    }
+
+    function startCountdown() {
+        clearInterval(countdownInterval);
+        let seconds = 50; // 50 Sekunden Timer
+        
+        const btn = document.getElementById('freigabeBtn');
+        btn.innerText = `🔓 Offen (${seconds}s)`;
+        btn.style.backgroundColor = 'var(--bosch-green)';
+        btn.style.color = 'white';
+
+        countdownInterval = setInterval(() => {
+            seconds--;
+            if (seconds <= 0) {
+                lockAssignments();
+            } else {
+                btn.innerText = `🔓 Offen (${seconds}s)`;
+            }
+        }, 1000);
+    }
+
+    // Eigene Funktion zum Speichern, damit der Timer bei Auswahl resettet wird
+    function handleAssignmentChange(fullId, value) {
+        db.ref(`dashboardAssignments/${fullId}`).set(value);
+        if (isAssignmentUnlocked) {
+            startCountdown(); // Timer bei jeder Auswahl wieder auf 50s setzen!
+        }
+    }
+    // --- ENDE FREIGABE LOGIK ---
+    
     // --- UI RENDERING ---
     function updateUI() {
         if (!state.maintConfig.agie) return;
@@ -419,7 +507,7 @@ function renderColKw(listId, countId, keys) {
             </div>
             <div style="font-size:0.85em; margin: 5px 5px; text-align: left;">${pkg} (ca. ${dur}m)</div>
             <div class="card-actions">
-                <select onchange="db.ref('dashboardAssignments/${fullId}').set(this.value)">
+                <select onchange="handleAssignmentChange('${fullId}', this.value)" ${!isAssignmentUnlocked ? 'disabled' : ''} style="${!isAssignmentUnlocked ? 'background-color:#f0f0f0; cursor:not-allowed;' : ''}">
                     <option value="">--</option>
                     ${(state.config.einstellerListe || []).map(e => `<option value="${e}" ${ass===e?'selected':''}>${e}</option>`).join('')}
                 </select>
