@@ -362,14 +362,17 @@
         else if (rest === 0) aktuellerStatus = 'CRIT (Genau auf 0)';
         else if (rest <= warnLimit) aktuellerStatus = 'WARNUNG';
 
-        // Was war der letzte Status in der Datenbank?
-        const letzterStatus = state.statusMemory[maschineId] || 'OK';
+        // FEHLERBEHEBUNG: Ersetzt Punkte und andere für Firebase ungültige Zeichen durch Unterstriche
+        const safeId = maschineId.replace(/[.#$\[\]]/g, '_');
+
+        // Was war der letzte Status in der Datenbank? (mit safeId)
+        const letzterStatus = state.statusMemory[safeId] || 'OK';
 
         // Nur loggen und speichern, wenn der Status sich verändert hat!
         if (aktuellerStatus !== letzterStatus) {
-            db.ref(`statusMemory/${maschineId}`).set(aktuellerStatus); // Neuen Status merken
+            db.ref(`statusMemory/${safeId}`).set(aktuellerStatus); // Neuen Status merken
             
-            // Log schreiben, aber nur wenn es nicht der Start-Zustand 'OK' ist (verhindert Spam beim ersten Laden)
+            // Log schreiben (Hier nutzen wir wieder die echte maschineId für den Text!)
             if (aktuellerStatus !== 'OK' || letzterStatus !== 'OK') {
                 schreibeLog(maschineId, 'STATUS_WECHSEL', `Status gewechselt auf: ${aktuellerStatus} (Rest: ${rest})`);
             }
