@@ -274,6 +274,7 @@
             freigabeBtn.style.display = 'block';
             logBtn.style.display = 'block'; // NEU: Log-Button anzeigen
             startLogoutCountdown();
+            updateUI();
         } else {
             // Wenn ausgeloggt: Verstecke Buttons, stoppe Timer
             authBtn.innerText = '🔑 Login';
@@ -404,12 +405,6 @@
     let isAssignmentUnlocked = false;
     let countdownInterval = null;
 
-    // Login-Status prüfen und Button einblenden/ausblenden
-    auth.onAuthStateChanged(user => { 
-        document.getElementById('authBtn').innerText = user ? '🔓 Logout' : '🔑 Login'; 
-        document.getElementById('freigabeBtn').style.display = user ? 'block' : 'none';
-        if (!user) lockAssignments(); // Beim Logout sofort sperren
-    });
 
     function openFreigabeModal() {
         document.getElementById('freigabeModal').style.display = 'flex';
