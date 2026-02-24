@@ -336,22 +336,22 @@
       }
     }
 
-    // Zentrale Funktion zum Schreiben eines Log-Eintrags
+   // Zentrale Funktion zum Schreiben eines Log-Eintrags
     function schreibeLog(maschineId, aktion, details) {
-        // Ermitteln, wer das gemacht hat (falls nicht eingeloggt: 'System')
-        const user = auth.currentUser ? (auth.currentUser.email || 'Unbekannt') : 'System';
-        
-        // Aktuelles Datum und Uhrzeit (z.B. "2026-02-24T14:30:00.000Z")
+        // NEU: Sofort abbrechen, wenn niemand eingeloggt ist (keine Schreibrechte)
+        if (!auth.currentUser) return; 
+
+        const user = auth.currentUser.email || 'Unbekannt';
         const timestamp = new Date().toISOString();
         
         // Log in die Datenbank pushen
         db.ref('wartungsLogs').push({
             zeit: timestamp,
             maschine: maschineId,
-            aktion: aktion, // z.B. 'ZUTEILUNG', 'ERLEDIGT', 'STATUS_WECHSEL'
+            aktion: aktion, 
             details: details,
             benutzer: user
-        });
+        }).catch(e => console.warn("Log konnte nicht geschrieben werden:", e));
     }
 
     // Funktion, die prüft, ob sich der Status geändert hat (Warn, Crit, Fällig)
@@ -362,19 +362,21 @@
         else if (rest === 0) aktuellerStatus = 'CRIT (Genau auf 0)';
         else if (rest <= warnLimit) aktuellerStatus = 'WARNUNG';
 
-        // FEHLERBEHEBUNG: Ersetzt Punkte und andere für Firebase ungültige Zeichen durch Unterstriche
         const safeId = maschineId.replace(/[.#$\[\]]/g, '_');
-
-        // Was war der letzte Status in der Datenbank? (mit safeId)
         const letzterStatus = state.statusMemory[safeId] || 'OK';
 
         // Nur loggen und speichern, wenn der Status sich verändert hat!
         if (aktuellerStatus !== letzterStatus) {
-            db.ref(`statusMemory/${safeId}`).set(aktuellerStatus); // Neuen Status merken
-            
-            // Log schreiben (Hier nutzen wir wieder die echte maschineId für den Text!)
-            if (aktuellerStatus !== 'OK' || letzterStatus !== 'OK') {
-                schreibeLog(maschineId, 'STATUS_WECHSEL', `Status gewechselt auf: ${aktuellerStatus} (Rest: ${rest})`);
+            // Wir merken uns den Status lokal, damit die Schleife nicht endlos weiterläuft
+            state.statusMemory[safeId] = aktuellerStatus;
+
+            // NEU: Nur in die Datenbank schreiben, wenn jemand eingeloggt ist
+            if (auth.currentUser) {
+                db.ref(`statusMemory/${safeId}`).set(aktuellerStatus).catch(e => console.warn("Status-Speicher blockiert:", e)); 
+                
+                if (aktuellerStatus !== 'OK' || letzterStatus !== 'OK') {
+                    schreibeLog(maschineId, 'STATUS_WECHSEL', `Status gewechselt auf: ${aktuellerStatus} (Rest: ${rest})`);
+                }
             }
         }
     }
