@@ -467,8 +467,8 @@
             // Zwingend warten, bis alle Zyklen durchgeklickt wurden
             const isReset = (cfg.steps && cfg.steps.length > 0) ? (cyc >= cfg.steps.length) : (ist >= cfg.maxLimit);
             
-            // Test-Ausgabe für die Konsole (F12 drücken)
-            if (sId === 'H-22' || sId === '22') {
+        // Test-Ausgabe für die Konsole
+        if (sId == '22' || sId == 'H-22') {
             console.log(`H-22 Status -> Ist: ${ist}, Cyc: ${cyc}, Steps-Länge: ${cfg.steps ? cfg.steps.length : 'keine'}, isReset: ${isReset}`);
         }
 
