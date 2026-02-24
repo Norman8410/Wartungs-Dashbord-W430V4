@@ -463,15 +463,16 @@
             const ist = (parseInt(item.Parts || item["COUNT(*)"]) || 0) - ((raw[offK] && raw[offK][sId]) || 0);
             const cyc = (raw.extraCycles && raw.extraCycles[sId]) || 0;
             const step = (cfg.steps && cfg.steps[cyc]) || { target: cfg.maxLimit, pkg: "RESET" };
-        
-            // ÄNDERUNG HIER: 
-            // Falls Schritte (Steps) definiert sind, ist "isReset" NUR wahr, wenn alle Zyklen durch sind.
-            // Die Stückzahl (ist >= maxLimit) wird dann für das Umschalten ignoriert.
-            const isReset = (cfg.steps && cfg.steps.length > 0) 
-                            ? (cyc >= cfg.steps.length) 
-                            : (ist >= cfg.maxLimit);
-        
-            const rest = (isReset ? cfg.maxLimit : step.target) - ist;
+            
+            // Zwingend warten, bis alle Zyklen durchgeklickt wurden
+            const isReset = (cfg.steps && cfg.steps.length > 0) ? (cyc >= cfg.steps.length) : (ist >= cfg.maxLimit);
+            
+            // Test-Ausgabe für die Konsole (F12 drücken)
+            if (sId === 'H-22' || sId === '22') {
+            console.log(`H-22 Status -> Ist: ${ist}, Cyc: ${cyc}, Steps-Länge: ${cfg.steps ? cfg.steps.length : 'keine'}, isReset: ${isReset}`);
+        }
+
+        const rest = (isReset ? cfg.maxLimit : step.target) - ist;
             const dur = getDuration(isReset ? "RESET" : step.pkg, cfg.times);
             
             return { sId, rest, pkg: isReset ? "WP RESET" : step.pkg, dur, isReset, totalParts: item.Parts || item["COUNT(*)"] };
