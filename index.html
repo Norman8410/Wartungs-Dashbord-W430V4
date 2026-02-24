@@ -89,8 +89,10 @@
         <span style="color:var(--bosch-red);font-weight:900;font-size:24px;">BOSCH</span> 
         <div id="overall-workload" class="total-workload">Lade...</div>
     </div>
-    <div style="display:flex; gap:10px;">
+<div style="display:flex; gap:10px;">
         <button id="freigabeBtn" class="nav-btn" style="display:none;" onclick="openFreigabeModal()">Freigabe Einteilung</button>
+        
+        <button id="logDownloadBtn" class="nav-btn" style="display:none; color: var(--bosch-green);" onclick="promptAdminForLog()">📄 Log Download</button>
         
         <button id="authBtn" class="nav-btn" onclick="toggleAuthModal()">🔑 Login</button>
         <button class="nav-btn" onclick="openAdminModal()">⚙️ Einsteller</button>
@@ -255,6 +257,7 @@
         state.maintenanceStateUnotronAuto = data.maintenanceStateUnotronAuto || {};
         state.maintenanceStateLaser = data.maintenanceStateLaser || {};
         state.maintenanceStateKW = data.maintenanceStateKW || {};
+        state.statusMemory = data.statusMemory || {};
         updateUI();
     });
 
@@ -264,18 +267,21 @@
     auth.onAuthStateChanged(user => { 
         const authBtn = document.getElementById('authBtn');
         const freigabeBtn = document.getElementById('freigabeBtn');
+        const logBtn = document.getElementById('logDownloadBtn'); // NEU
 
         if (user) {
-            // Wenn eingeloggt: Zeige Freigabe-Button und starte Logout-Timer
+            // Wenn eingeloggt: Zeige Buttons und starte Timer
             freigabeBtn.style.display = 'block';
+            logBtn.style.display = 'block'; // NEU: Log-Button anzeigen
             startLogoutCountdown();
         } else {
-            // Wenn ausgeloggt: Verstecke Button, stoppe Timer, sperre Dropdowns
+            // Wenn ausgeloggt: Verstecke Buttons, stoppe Timer
             authBtn.innerText = '🔑 Login';
             freigabeBtn.style.display = 'none';
+            logBtn.style.display = 'none'; // NEU: Log-Button verstecken
             clearInterval(logoutInterval);
             lockAssignments();
-            updateUI(); // UI updaten, damit Buttons gesperrt werden
+            updateUI(); 
         }
     });
 
@@ -329,6 +335,47 @@
         }
       }
     }
+
+    // Zentrale Funktion zum Schreiben eines Log-Eintrags
+    function schreibeLog(maschineId, aktion, details) {
+        // Ermitteln, wer das gemacht hat (falls nicht eingeloggt: 'System')
+        const user = auth.currentUser ? (auth.currentUser.email || 'Unbekannt') : 'System';
+        
+        // Aktuelles Datum und Uhrzeit (z.B. "2026-02-24T14:30:00.000Z")
+        const timestamp = new Date().toISOString();
+        
+        // Log in die Datenbank pushen
+        db.ref('wartungsLogs').push({
+            zeit: timestamp,
+            maschine: maschineId,
+            aktion: aktion, // z.B. 'ZUTEILUNG', 'ERLEDIGT', 'STATUS_WECHSEL'
+            details: details,
+            benutzer: user
+        });
+    }
+
+    // Funktion, die prüft, ob sich der Status geändert hat (Warn, Crit, Fällig)
+    function checkUndLogStatus(maschineId, rest, warnLimit) {
+        let aktuellerStatus = 'OK';
+        
+        if (rest < 0) aktuellerStatus = 'ÜBERFÄLLIG (0 unterschritten)';
+        else if (rest === 0) aktuellerStatus = 'CRIT (Genau auf 0)';
+        else if (rest <= warnLimit) aktuellerStatus = 'WARNUNG';
+
+        // Was war der letzte Status in der Datenbank?
+        const letzterStatus = state.statusMemory[maschineId] || 'OK';
+
+        // Nur loggen und speichern, wenn der Status sich verändert hat!
+        if (aktuellerStatus !== letzterStatus) {
+            db.ref(`statusMemory/${maschineId}`).set(aktuellerStatus); // Neuen Status merken
+            
+            // Log schreiben, aber nur wenn es nicht der Start-Zustand 'OK' ist (verhindert Spam beim ersten Laden)
+            if (aktuellerStatus !== 'OK' || letzterStatus !== 'OK') {
+                schreibeLog(maschineId, 'STATUS_WECHSEL', `Status gewechselt auf: ${aktuellerStatus} (Rest: ${rest})`);
+            }
+        }
+    }
+    
     // --- LOGIK ---
     function getDuration(pkgString, timeTable) {
         // Sicherheitscheck: Wenn kein Paket oder Reset, dann 0 Minuten
@@ -419,6 +466,7 @@
     // Eigene Funktion zum Speichern, damit der Timer bei Auswahl resettet wird
     function handleAssignmentChange(fullId, value) {
         db.ref(`dashboardAssignments/${fullId}`).set(value);
+        schreibeLog(fullId, 'ZUTEILUNG', value ? `Zugewiesen an: ${value}` : `Zuteilung entfernt`);
         resetLogoutTimer(); // <--- NEU: Logout-Timer zurücksetzen
         if (isAssignmentUnlocked) {
             startCountdown(); // Timer bei jeder Auswahl wieder auf 50s setzen!
@@ -474,7 +522,7 @@
 
         const rest = (isReset ? cfg.maxLimit : step.target) - ist;
             const dur = getDuration(isReset ? "RESET" : step.pkg, cfg.times);
-            
+            checkUndLogStatus(prefix + sId, rest, cfg.warn || 5000);
             return { sId, rest, pkg: isReset ? "WP RESET" : step.pkg, dur, isReset, totalParts: item.Parts || item["COUNT(*)"] };
         }).filter(item => item.rest <= (cfg.warn || 5000)); // Nur anzeigen, was fällig/nah dran ist
     
@@ -514,6 +562,8 @@ function renderColKw(listId, countId, keys) {
                 
                 const targetKW = isReset ? (cfg.yearlyResetWeek || 52) : stepDef.target;
                 const rest = targetKW - week;
+                const fullMachineId = (cfg.prefix || '') + id;
+                checkUndLogStatus(fullMachineId, rest, cfg.warnWeeks || 4);
     
                 // Filter: Nur anzeigen, wenn Warnwoche erreicht
                 if (rest > (cfg.warnWeeks || 4)) return null;
@@ -628,6 +678,8 @@ async function handleMaint(pre, id, isReset, rawTotal, kwKey) {
         // Wir nutzen pre+id (z.B. "A44" oder "HE22") als Key
         const cleanId = pre + id; 
         await db.ref(`dashboardAssignments/${cleanId}`).remove();
+        const aktionsTyp = isReset ? 'WP RESET' : 'WARTUNGSSCHRITT ERLEDIGT';
+        schreibeLog(cleanId, aktionsTyp, `Wurde erfolgreich zurückgesetzt/bestätigt.`);
         
         // Log Eintrag (Optional, aber gut für Nachvollziehbarkeit)
         console.log(`Erfolg: ${cleanId} in ${rootPath} aktualisiert.`);
@@ -664,6 +716,74 @@ async function handleMaint(pre, id, isReset, rawTotal, kwKey) {
     function renderAdminList() { document.getElementById('adminEinstellerList').innerHTML = (state.config.einstellerListe || []).map(e => `<div>${e} <span style="color:red; cursor:pointer;" onclick="removeEinsteller('${e}')">[X]</span></div>`).join(''); }
     async function addEinsteller() { const val = document.getElementById('newEinsteller').value.trim(); if(val) { await db.ref('config/einstellerListe').set([...(state.config.einstellerListe || []), val]); renderAdminList(); } }
     async function removeEinsteller(name) { await db.ref('config/einstellerListe').set(state.config.einstellerListe.filter(e => e !== name)); renderAdminList(); }
+    // --- LOG DOWNLOAD LOGIK ---
+    async function promptAdminForLog() {
+        // Simples Eingabefenster für das Passwort
+        const eingabe = prompt("Bitte Admin-Passwort eingeben, um das Logbuch herunterzuladen:");
+        
+        // Abbrechen geklickt oder nichts eingegeben
+        if (eingabe === null) return; 
+        
+        if (eingabe === state.config.AdminPW) {
+            await downloadLogsCSV();
+        } else {
+            alert("Falsches Passwort! Download verweigert.");
+        }
+    }
+
+    async function downloadLogsCSV() {
+        try {
+            // Logs aus der Datenbank laden
+            const snap = await db.ref('wartungsLogs').once('value');
+            const logs = snap.val();
+            
+            if (!logs) {
+                alert("Es sind noch keine Log-Einträge vorhanden.");
+                return;
+            }
+
+            // Kopfzeile für die CSV-Datei
+            let csvContent = "Datum,Uhrzeit,Maschine,Aktion,Benutzer,Details\n";
+            
+            // Alle Logs in ein Array umwandeln und absteigend sortieren (neueste zuerst)
+            const logArray = Object.values(logs).sort((a, b) => new Date(b.zeit) - new Date(a.zeit));
+
+            // Zeile für Zeile aufbauen
+            logArray.forEach(log => {
+                const dateObj = new Date(log.zeit);
+                const dateStr = dateObj.toLocaleDateString('de-DE'); // z.B. 24.02.2026
+                const timeStr = dateObj.toLocaleTimeString('de-DE'); // z.B. 14:30:00
+                
+                // Texte in Anführungszeichen setzen, falls Kommas im Text auftauchen
+                const maschine = `"${log.maschine || ''}"`;
+                const aktion = `"${log.aktion || ''}"`;
+                const user = `"${log.benutzer || ''}"`;
+                // Zeilenumbrüche und existierende Anführungszeichen absichern
+                const details = `"${(log.details || '').replace(/"/g, '""')}"`;
+                
+                csvContent += `${dateStr},${timeStr},${maschine},${aktion},${user},${details}\n`;
+            });
+
+            // CSV Datei generieren und automatischen Download starten
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            
+            // Dateiname enthält das aktuelle Datum
+            const fileDate = new Date().toISOString().split('T')[0];
+            link.setAttribute("download", `WartungsHistorie_${fileDate}.csv`);
+            
+            document.body.appendChild(link);
+            link.click(); // Simuliert den Klick
+            document.body.removeChild(link); // Räumt nach dem Klick wieder auf
+            
+        } catch(e) {
+            console.error("Fehler beim Log-Download:", e);
+            alert("Fehler beim Erstellen der Datei: " + e.message);
+        }
+    }
+    
 </script>
 </body>
 </html>
