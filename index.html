@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Zentrales Wartungs Dashboard W430</title>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <style>
+        /* Styles für das Hamburger Menü */
+        .menu-btn {
+            background: none; border: none; font-size: 1.2em; cursor: pointer; color: var(--bosch-blue); padding: 0 5px;
+        }
+        .menu-btn:hover { color: var(--bosch-red); }
+        
+        .dropdown { position: relative; display: inline-block; margin-left: auto; }
+        
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: 100%;
+            background-color: #f9f9f9;
+            min-width: 160px;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+            z-index: 10;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        
+        .dropdown-content a {
+            color: black;
+            padding: 12px 16px;
+            text-decoration: none;
+            display: block;
+            font-size: 0.9em;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .dropdown-content a:last-child { border-bottom: none; }
+        .dropdown-content a:hover { background-color: #f1f1f1; color: var(--bosch-red); }
+        .show { display: block; }
+        
+        /* Anpassung Header Layout */
+        .col-header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            padding: 10px 15px;
+        }
+        .col-title { display: flex; align-items: center; gap: 8px; font-weight: bold; color: var(--bosch-blue); text-decoration: none; }
+        :root { --bosch-red: #d50000; --bosch-blue: #003a6c; --bosch-green: #008a4f; --bosch-gray: #eff1f2; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bosch-gray); margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; }
+        .top-bar { height: 45px; background: linear-gradient(90deg, #d50000 0%, #003a6c 50%, #008a4f 100%); display: flex; align-items: center; padding: 0 15px; color: white; font-weight: bold; }
+        .header { background: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .total-workload { background: var(--bosch-blue); color: white; padding: 5px 15px; border-radius: 20px; font-weight: bold; font-size: 1.1em; margin-left: 20px;}
+        .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; padding: 15px; flex: 1; overflow-y: auto; }
+        .column { background: white; border-top: 5px solid var(--bosch-blue); display: flex; flex-direction: column; overflow: hidden; border-radius: 4px; min-height: 350px; }
+        .col-header { padding: 12px; background: #f8f9fa; border-bottom: 1px solid #ddd; font-weight: bold; font-size: 1em; }
+        .col-header a { text-decoration: none; color: var(--bosch-blue); display: flex; justify-content: space-between; align-items: center; }
+        .col-header a:hover { color: var(--bosch-red); }
+        .time-badge { font-size: 0.8em; color: var(--bosch-red); background: #fff; padding: 2px 8px; border-radius: 12px; border: 1px solid #ffcccc; margin-left: 5px; }
+        .machine-list { flex: 1; overflow-y: auto; padding: 10px; }
+        .no-data { text-align: center; color: #999; padding-top: 30px; font-style: italic; font-size: 0.9em; }
+        .card { padding: 10px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #eee; }
+        .card.warning { background-color: #fff3cd; border-left: 6px solid #ffc107; }
+        .card.critical { background-color: #f8d7da; border-left: 6px solid #dc3545; }
+        .card.overdue { background-color: #f5b7b1; border-left: 6px solid #b03a2e; }
+        .card.in-progress { background-color: #d1ecf1 !important; border-left: 6px dashed #0c5460 !important; }
+        .card-info { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px; }
+        .m-id { font-weight: bold; font-size: 1.1em; } .m-rest { font-weight: bold; font-size: 1.1em; }
+        .card-actions { display: flex; gap: 5px; margin-top: 5px; }
+        select { flex: 1; padding: 4px; font-size: 0.85em; border: 1px solid rgba(0,0,0,0.2); border-radius: 4px; }
+        .btn-done { padding: 0 8px; border: 1px solid rgba(0,0,0,0.2); border-radius: 4px; cursor: pointer; background: white; color: var(--bosch-green); font-weight: bold; }
+        .btn-done.reset-mode { color: var(--bosch-red); }
+        .btn-done:disabled { opacity: 0.3; }
+        .nav-btn { padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: white; font-weight: bold; color: var(--bosch-blue); border-radius: 4px; }
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 5000; }
+        .modal-box { background: white; padding: 20px; width: 320px; border-top: 8px solid var(--bosch-red); border-radius: 4px; }
+        .form-group { margin-bottom: 12px; } .form-group input { width: 100%; padding: 8px; box-sizing: border-box; }
+        .primary-btn { background: var(--bosch-blue); color: white; border: none; width: 100%; padding: 10px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="top-bar">Zentrales Wartungs Dashboard W430</div>
+<div class="header">
+    <div style="display:flex; align-items:center;">
+        <span style="color:var(--bosch-red);font-weight:900;font-size:24px;">BOSCH</span> 
+        <div id="overall-workload" class="total-workload">Lade...</div>
+    </div>
+<div style="display:flex; gap:10px;">
+        <button id="freigabeBtn" class="nav-btn" style="display:none;" onclick="openFreigabeModal()">Freigabe Einteilung</button>
+        
+        <button id="logDownloadBtn" class="nav-btn" style="display:none; color: var(--bosch-green);" onclick="promptAdminForLog()">📄 Log Download</button>
+        
+        <button id="authBtn" class="nav-btn" onclick="toggleAuthModal()">🔑 Login</button>
+        <button class="nav-btn" onclick="openAdminModal()">⚙️ Einsteller</button>
+    </div>
+</div>
+
+<div class="dashboard-grid">
+    <div class="column">
+        <div class="col-header">
+            <a href="agie.html" class="col-title"><span>⚡ Agie</span> <div id="count-agie"></div></a>
+            <div class="dropdown">
+                <button onclick="toggleMenu('menu-agie')" class="menu-btn">☰</button>
+                <div id="menu-agie" class="dropdown-content">
+                    <a href="agie.html">Agie Detailansicht</a>
+                </div>
+            </div>
+        </div>
+        <div class="machine-list" id="list-agie"></div>
+    </div>
+
+    <div class="column">
+        <div class="col-header">
+            <a href="unotron.html" class="col-title"><span>🧪 Unotron</span> <div id="count-uno"></div></a>
+            <div class="dropdown">
+                <button onclick="toggleMenu('menu-uno')" class="menu-btn">☰</button>
+                <div id="menu-uno" class="dropdown-content">
+                    <a href="unotron.html">Unotron Detailansicht</a>
+                </div>
+            </div>
+        </div>
+        <div class="machine-list" id="list-uno"></div>
+    </div>
+
+    <div class="column">
+        <div class="col-header">
+            <a href="he.html" class="col-title"><span>⚙️ HE-Wartung</span> <div id="count-he"></div></a>
+            <div class="dropdown">
+                <button onclick="toggleMenu('menu-he')" class="menu-btn">☰</button>
+                <div id="menu-he" class="dropdown-content">
+                    <a href="he.html">HE Detailansicht</a>
+                </div>
+            </div>
+        </div>
+        <div class="machine-list" id="list-he"></div>
+    </div>
+
+    <div class="column">
+        <div class="col-header">
+            <a href="unotron-auto.html" class="col-title"><span>🤖 Unotron Auto</span> <div id="count-uno-auto"></div></a>
+            <div class="dropdown">
+                <button onclick="toggleMenu('menu-ua')" class="menu-btn">☰</button>
+                <div id="menu-ua" class="dropdown-content">
+                    <a href="unotron-auto.html">Handling Detailansicht</a>
+                </div>
+            </div>
+        </div>
+        <div class="machine-list" id="list-uno-auto"></div>
+    </div>
+
+    <div class="column">
+        <div class="col-header">
+            <a href="laser.html" class="col-title"><span>💡 Laser</span> <div id="count-laser"></div></a>
+            <div class="dropdown">
+                <button onclick="toggleMenu('menu-laser')" class="menu-btn">☰</button>
+                <div id="menu-laser" class="dropdown-content">
+                    <a href="laser.html">Laser Detailansicht</a>
+                </div>
+            </div>
+        </div>
+        <div class="machine-list" id="list-laser"></div>
+    </div>
+
+    <div class="column" style="border-top-color: #17a2b8;">
+        <div class="col-header">
+            <span class="col-title"><span>💧 Waschanlagen</span> <div id="count-wasch"></div></span>
+            <div class="dropdown">
+                <button onclick="toggleMenu('menu-wasch')" class="menu-btn">☰</button>
+                <div id="menu-wasch" class="dropdown-content">
+                    <a href="waschanlagen.html">Linienwaschanlage (Silberhorn)</a>
+                    <a href="ministar.html">Ministar (Linie 6)</a>
+                </div>
+            </div>
+        </div>
+        <div class="machine-list" id="list-wasch"></div>
+    </div>
+
+    <div class="column" style="border-top-color: #fd7e14;">
+        <div class="col-header">
+            <span class="col-title"><span>🔍 Prüfstände & NEK</span> <div id="count-pruef"></div></span>
+            <div class="dropdown">
+                <button onclick="toggleMenu('menu-pruef')" class="menu-btn">☰</button>
+                <div id="menu-pruef" class="dropdown-content">
+                    <a href="sichtprüfstand.html">Sichtprüfstände</a>
+                    <a href="sichtprüfplatz.html">Sichtprüfplätze</a>
+                    <a href="einstellgeraet.html">Einstellgerät NEK</a>
+                </div>
+            </div>
+        </div>
+        <div class="machine-list" id="list-pruef"></div>
+    </div>
+
+    <div class="column" style="border-top-color: #6f42c1;">
+        <div class="col-header">
+            <span class="col-title"><span>📦 Lager & Regale</span> <div id="count-lager"></div></span>
+            <div class="dropdown">
+                <button onclick="toggleMenu('menu-lager')" class="menu-btn">☰</button>
+                <div id="menu-lager" class="dropdown-content">
+                    <a href="oellager.html">Öllager</a>
+                    <a href="waschregal.html">Waschregal</a>
+                    <a href="entkopplung.html">Entkopplungsregal</a>
+                    <a href="ablieferregal-ut.html">Ablieferregal Unotron</a>
+                </div>
+            </div>
+        </div>
+        <div class="machine-list" id="list-lager"></div>
+    </div>
+</div>
+
+<div style="background: #fff; padding: 10px; font-size: 0.8em; border-top: 1px solid #ddd; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
+    <strong>Direktlinks:</strong>
+    <a href="agie.html">Agie</a> | <a href="unotron.html">Unotron</a> | <a href="he.html">HE</a> | <a href="unotron-auto.html">Uno-Auto</a> | <a href="laser.html">Laser</a> | 
+    <a href="waschanlagen.html">Waschanlagen</a> | <a href="ministar.html">Ministar</a> | <a href="sichtprüfstand.html">Sichtprüfstand</a> | <a href="sichtprüfplatz.html">Sichtprüfplatz</a> |
+    <a href="einstellgeraet.html">NEK</a> | <a href="oellager.html">Öllager</a> | <a href="waschregal.html">Waschregal</a> | <a href="entkopplung.html">Entkopplung</a> | <a href="ablieferregal-ut.html">Ablieferregal</a>
+</div>
+
+<div id="authModal" class="modal"><div class="modal-box"><h2 id="modalTitle" style="margin-top:0;">Login</h2><div id="authError" style="color:red; font-size:0.8em; margin-bottom:5px;"></div><div class="form-group"><input type="text" id="authIdentifier" placeholder="Benutzername"></div><div id="regFields" style="display:none;"><div class="form-group"><input type="email" id="authEmail" placeholder="E-Mail"></div><div class="form-group"><input type="text" id="authInvite" placeholder="Einladungscode"></div></div><div class="form-group"><input type="password" id="authPass" placeholder="Passwort"></div><button class="primary-btn" id="mainAuthBtn" onclick="processAuth()">Anmelden</button><button class="primary-btn" style="background:none; color:var(--bosch-blue); margin-top:5px;" onclick="switchAuthMode()" id="switchBtn">Neu hier? Registrieren</button><button class="primary-btn" style="background:none; color:gray;" onclick="closeAuthModal()">Abbrechen</button></div></div>
+
+<div id="adminModal" class="modal"><div class="modal-box"><h2 style="margin-top:0;">Einsteller</h2><div id="adminLogin"><input type="password" id="AdminPWInput" placeholder="Admin Passwort" style="width:100%; padding:8px; margin-bottom:10px;"><button class="primary-btn" onclick="checkAdminPW()">OK</button></div><div id="adminContent" style="display:none;"><div id="adminEinstellerList" style="max-height:150px; overflow-y:auto; margin-bottom:10px; border:1px solid #eee; padding:5px;"></div><input type="text" id="newEinsteller" placeholder="Name Vorname" style="width:100%; padding:8px; margin-bottom:5px;"><button class="primary-btn" onclick="addEinsteller()">Hinzufügen</button></div><button class="primary-btn" style="background:none; color:gray; margin-top:10px;" onclick="closeAdminModal()">Schließen</button></div></div>
+
+<div id="freigabeModal" class="modal">
+    <div class="modal-box">
+        <h2 style="margin-top:0;">Freigabe</h2>
+        <input type="password" id="freigabePass" placeholder="Tel-Passwort" style="width:100%; padding:8px; margin-bottom:10px;">
+        <button class="primary-btn" onclick="checkFreigabePW()">Freigeben</button>
+        <button class="primary-btn" style="background:none; color:gray; margin-top:10px;" onclick="closeFreigabeModal()">Abbrechen</button>
+    </div>
+</div>
+
+<script>
+    const firebaseConfig = { apiKey: "AIzaSyD6xGCtU-felOyO_BRsFnVlB4yhC46FgYg", authDomain: "bosch-agie-wartung.firebaseapp.com", databaseURL: "https://bosch-agie-wartung-default-rtdb.europe-west1.firebasedatabase.app", projectId: "bosch-agie-wartung" };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database(), auth = firebase.auth();
+    
+    let state = { config: {}, assignments: {}, maintConfig: {}, maintenanceState: {}, maintenanceStateHE: {}, maintenanceStateUnotron: {}, maintenanceStateUnotronAuto: {}, maintenanceStateLaser: {}, maintenanceStateKW: {}, statusMemory: {}, isRegMode: false };
+
+    // Verknüpfung der Seiten zu den Dashboard-Spalten
+    const kwGroups = {
+        wasch: ['silberhorn', 'ministar'],
+        pruef: ['sichtpruefstaende', 'sichtpruefplaetze', 'einstellgeraetNek'],
+        lager: ['unotronAblieferregal', 'entkopplungsregal', 'waschregal', 'oellager']
+    };
+
+    // Realtime Sync - Optimiert (Ignoriert das riesige Logbuch für Live-Updates)
+    const zuUeberwachendePfade = [
+        { path: 'config', key: 'config' },
+        { path: 'dashboardAssignments', key: 'assignments' },
+        { path: 'maintenanceConfig', key: 'maintConfig' },
+        { path: 'maintenanceState', key: 'maintenanceState' },
+        { path: 'maintenanceStateHE', key: 'maintenanceStateHE' },
+        { path: 'maintenanceStateUnotron', key: 'maintenanceStateUnotron' },
+        { path: 'maintenanceStateUnotronAuto', key: 'maintenanceStateUnotronAuto' },
+        { path: 'maintenanceStateLaser', key: 'maintenanceStateLaser' },
+        { path: 'maintenanceStateKW', key: 'maintenanceStateKW' },
+        { path: 'statusMemory', key: 'statusMemory' }
+    ];
+
+    // Nur die Pfade abonnieren, die für die Anzeige wirklich wichtig sind
+    zuUeberwachendePfade.forEach(p => {
+        db.ref(p.path).on('value', snap => {
+            state[p.key] = snap.val() || {};
+            updateUI();
+        });
+    });
+
+    // --- LOGIN & LOGOUT TIMER LOGIK ---
+    let logoutInterval = null;
+
+    auth.onAuthStateChanged(user => { 
+        const authBtn = document.getElementById('authBtn');
+        const freigabeBtn = document.getElementById('freigabeBtn');
+        const logBtn = document.getElementById('logDownloadBtn');
+
+        if (user) {
+            // Wenn eingeloggt: Zeige Buttons und starte Timer
+            freigabeBtn.style.display = 'block';
+            logBtn.style.display = 'block'; 
+            startLogoutCountdown();
+            updateUI();
+        } else {
+            // Wenn ausgeloggt: Verstecke Buttons, stoppe Timer
+            authBtn.innerText = '🔑 Login';
+            freigabeBtn.style.display = 'none';
+            logBtn.style.display = 'none'; 
+            clearInterval(logoutInterval);
+            lockAssignments();
+            updateUI(); 
+        }
+    });
+
+    function startLogoutCountdown() {
+        clearInterval(logoutInterval);
+        let seconds = 50; // 50 Sekunden bis zum automatischen Logout
+        
+        const btn = document.getElementById('authBtn');
+        btn.innerText = `🔓 Logout (${seconds}s)`;
+
+        logoutInterval = setInterval(() => {
+            seconds--;
+            if (seconds <= 0) {
+                clearInterval(logoutInterval);
+                auth.signOut(); // Automatischer Logout!
+            } else {
+                btn.innerText = `🔓 Logout (${seconds}s)`;
+            }
+        }, 1000);
+    }
+
+    // Diese Funktion rufen wir auf, wenn der User aktiv etwas arbeitet
+    function resetLogoutTimer() {
+        if (auth.currentUser) {
+            startLogoutCountdown();
+        }
+    }
+
+    // Menü Funktion
+    function toggleMenu(id) {
+        // Alle anderen offenen Menüs schließen
+        const dropdowns = document.getElementsByClassName("dropdown-content");
+        for (let i = 0; i < dropdowns.length; i++) {
+            if (dropdowns[i].id !== id) {
+                dropdowns[i].classList.remove('show');
+            }
+        }
+        // Gewünschtes Menü umschalten
+        document.getElementById(id).classList.toggle("show");
+    }
+    
+    // Schließen wenn man daneben klickt
+    window.onclick = function(event) {
+      if (!event.target.matches('.menu-btn')) {
+        const dropdowns = document.getElementsByClassName("dropdown-content");
+        for (let i = 0; i < dropdowns.length; i++) {
+          const openDropdown = dropdowns[i];
+          if (openDropdown.classList.contains('show')) {
+            openDropdown.classList.remove('show');
+          }
+        }
+      }
+    }
+
+   // Zentrale Funktion zum Schreiben eines Log-Eintrags
+    function schreibeLog(maschineId, aktion, details) {
+        // Sofort abbrechen, wenn niemand eingeloggt ist (keine Schreibrechte)
+        if (!auth.currentUser) return; 
+
+        const user = auth.currentUser.email || 'Unbekannt';
+        const timestamp = new Date().toISOString();
+        
+        // Log in die Datenbank pushen
+        db.ref('wartungsLogs').push({
+            zeit: timestamp,
+            maschine: maschineId,
+            aktion: aktion, 
+            details: details,
+            benutzer: user
+        }).catch(e => console.warn("Log konnte nicht geschrieben werden:", e));
+    }
+
+    // Funktion, die prüft, ob sich der Status geändert hat (Warn, Crit, Fällig)
+    function checkUndLogStatus(maschineId, rest, warnLimit) {
+        let aktuellerStatus = 'OK';
+        
+        if (rest < 0) aktuellerStatus = 'ÜBERFÄLLIG (0 unterschritten)';
+        else if (rest === 0) aktuellerStatus = 'CRIT (Genau auf 0)';
+        else if (rest <= warnLimit) aktuellerStatus = 'WARNUNG';
+
+        const safeId = maschineId.replace(/[.#$\[\]]/g, '_');
+        const letzterStatus = state.statusMemory[safeId] || 'OK';
+
+        // Nur loggen und speichern, wenn der Status sich verändert hat!
+        if (aktuellerStatus !== letzterStatus) {
+            // Wir merken uns den Status lokal, damit die Schleife nicht endlos weiterläuft
+            state.statusMemory[safeId] = aktuellerStatus;
+
+            // Nur in die Datenbank schreiben, wenn jemand eingeloggt ist
+            if (auth.currentUser) {
+                db.ref(`statusMemory/${safeId}`).set(aktuellerStatus).catch(e => console.warn("Status-Speicher blockiert:", e)); 
+                
+                if (aktuellerStatus !== 'OK' || letzterStatus !== 'OK') {
+                    schreibeLog(maschineId, 'STATUS_WECHSEL', `Status gewechselt auf: ${aktuellerStatus} (Rest: ${rest})`);
+                }
+            }
+        }
+    }
+    
+    // --- LOGIK ---
+    function getDuration(pkgString, timeTable) {
+        // Sicherheitscheck: Wenn kein Paket oder Reset, dann 0 Minuten
+        if (!pkgString || pkgString.includes("RESET") || pkgString.includes("AUSTAUSCH") || !timeTable) return 0;
+        
+        // Trennt bei "/", Komma oder Leerzeichen
+        return pkgString.split(/[\/\s,]+/).reduce((acc, p) => {
+            let key = p.toUpperCase().trim(); 
+            if (!key) return acc;
+            // Wenn das "P" fehlt (z.B. "1"), setze es davor ("P1")
+            if (!key.startsWith("P")) key = "P" + key;
+            
+            // Addiere die Zeit aus der Config, oder 0 wenn nicht gefunden
+            return acc + (parseInt(timeTable[key]) || 0);
+        }, 0);
+    }
+    function formatTime(m){ if(m<=0)return"0m"; const d=Math.floor(m/1440),h=Math.floor((m%1440)/60),min=m%60; let p=[]; if(d>0)p.push(d+'d'); if(h>0)p.push(h+'h'); if(min>0||p.length===0)p.push(min+'m'); return p.join(' '); }
+    function getWeek() { const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+3-(d.getDay()+6)%7); const w1=new Date(d.getFullYear(),0,4); return 1+Math.round(((d-w1)/86400000-3+(w1.getDay()+6)%7)/7); }
+
+    // --- FREIGABE LOGIK ---
+    let isAssignmentUnlocked = false;
+    let countdownInterval = null;
+
+
+    function openFreigabeModal() {
+        document.getElementById('freigabeModal').style.display = 'flex';
+        document.getElementById('freigabePass').value = '';
+        setTimeout(() => document.getElementById('freigabePass').focus(), 100);
+    }
+
+    function closeFreigabeModal() {
+        document.getElementById('freigabeModal').style.display = 'none';
+    }
+
+    function checkFreigabePW() {
+        const pw = document.getElementById('freigabePass').value;
+        if (pw === state.config.TelPW) {
+            closeFreigabeModal();
+            unlockAssignments();
+        } else {
+            alert("Falsches Passwort!");
+        }
+    }
+
+    function unlockAssignments() {
+        isAssignmentUnlocked = true;
+        updateUI(); // UI neu laden, damit Dropdowns aktiv werden
+        startCountdown();
+    }
+
+    function lockAssignments() {
+        isAssignmentUnlocked = false;
+        clearInterval(countdownInterval);
+        
+        const btn = document.getElementById('freigabeBtn');
+        btn.innerText = "Freigabe Einteilung";
+        btn.style.backgroundColor = 'white';
+        btn.style.color = 'var(--bosch-blue)';
+        
+        updateUI(); // UI neu laden, um Dropdowns zu sperren
+    }
+
+    function startCountdown() {
+        clearInterval(countdownInterval);
+        let seconds = 50; // 50 Sekunden Timer
+        
+        const btn = document.getElementById('freigabeBtn');
+        btn.innerText = `🔓 Offen (${seconds}s)`;
+        btn.style.backgroundColor = 'var(--bosch-green)';
+        btn.style.color = 'white';
+
+        countdownInterval = setInterval(() => {
+            seconds--;
+            if (seconds <= 0) {
+                lockAssignments();
+            } else {
+                btn.innerText = `🔓 Offen (${seconds}s)`;
+            }
+        }, 1000);
+    }
+
+    // Eigene Funktion zum Speichern, damit der Timer bei Auswahl resettet wird
+    function handleAssignmentChange(fullId, value) {
+        db.ref(`dashboardAssignments/${fullId}`).set(value);
+        schreibeLog(fullId, 'ZUTEILUNG', value ? `Zugewiesen an: ${value}` : `Zuteilung entfernt`);
+        resetLogoutTimer(); 
+        if (isAssignmentUnlocked) {
+            startCountdown(); // Timer bei jeder Auswahl wieder auf 50s setzen!
+        }
+    }
+    // --- ENDE FREIGABE LOGIK ---
+    
+    // --- UI RENDERING ---
+    function updateUI() {
+        if (!state.maintConfig.agie) return;
+        let totalMin = 0;
+        totalMin += renderCol('list-agie', 'count-agie', state.maintenanceState, 'A-', state.maintConfig.agie);
+        totalMin += renderCol('list-uno', 'count-uno', state.maintenanceStateUnotron, 'U-', state.maintConfig.unotron);
+        totalMin += renderCol('list-he', 'count-he', state.maintenanceStateHE, 'H-', state.maintConfig.he);
+        totalMin += renderCol('list-laser', 'count-laser', state.maintenanceStateLaser, 'L-', state.maintConfig.laser);
+        
+        // Unotron Auto Sonderlogik (Summierung)
+        if (state.maintenanceStateUnotron.cloudRawData) {
+            const groups = { "100": [101,102,103,104,113,114,115,116], "200": [117,112,111,110,109,108,107,106], "300": [118,119,120,121,122,123,124,125] };
+            const autoList = Object.keys(groups).map(gId => {
+                const sum = groups[gId].reduce((a, sId) => a + (parseInt(state.maintenanceStateUnotron.cloudRawData.find(r=>r.STATIONNO==sId)?.["COUNT(*)"])||0), 0);
+                return { STATIONNO: gId, "COUNT(*)": sum };
+            });
+            totalMin += renderCol('list-uno-auto', 'count-uno-auto', {...state.maintenanceStateUnotronAuto, cloudRawData: autoList}, 'UA-', state.maintConfig.unotronAuto);
+        }
+
+        totalMin += renderColKw('list-wasch', 'count-wasch', kwGroups.wasch);
+        totalMin += renderColKw('list-pruef', 'count-pruef', kwGroups.pruef);
+        totalMin += renderColKw('list-lager', 'count-lager', kwGroups.lager);
+
+        document.getElementById('overall-workload').innerText = `Gesamtaufwand: ${formatTime(totalMin)}`;
+    }
+
+    function renderCol(listId, countId, raw, prefix, cfg) {
+        if(!raw || !raw.cloudRawData) return 0;
+        let colMin = 0;
+        const offK = prefix==='A-'?'agieOffsets':(prefix==='H-'?'heOffsets':(prefix==='L-'?'laserOffsets':'unotronOffsets'));
+        
+        // Daten aufbereiten
+        const items = raw.cloudRawData.map(item => {
+            const sId = item.StationNo || item.STATIONNO;
+            const ist = (parseInt(item.Parts || item["COUNT(*)"]) || 0) - ((raw[offK] && raw[offK][sId]) || 0);
+            const cyc = (raw.extraCycles && raw.extraCycles[sId]) || 0;
+            const step = (cfg.steps && cfg.steps[cyc]) || { target: cfg.maxLimit, pkg: "RESET" };
+            
+            // Zwingend warten, bis alle Zyklen durchgeklickt wurden
+            const isReset = (cfg.steps && cfg.steps.length > 0) ? (cyc >= cfg.steps.length) : (ist >= cfg.maxLimit);
+
+            const rest = (isReset ? cfg.maxLimit : step.target) - ist;
+            const dur = getDuration(isReset ? "RESET" : step.pkg, cfg.times);
+            checkUndLogStatus(prefix + sId, rest, cfg.warn || 5000);
+            return { sId, rest, pkg: isReset ? "WP RESET" : step.pkg, dur, isReset, totalParts: item.Parts || item["COUNT(*)"] };
+        }).filter(item => item.rest <= (cfg.warn || 5000)); // Nur anzeigen, was fällig/nah dran ist
+    
+        // Sortierung nach Dringlichkeit
+        items.sort((a, b) => a.rest - b.rest);
+    
+        // HTML generieren
+        const html = items.map(item => {
+            colMin += item.dur;
+            return buildCard(prefix, item.sId, item.rest, item.pkg, item.dur, item.isReset, item.totalParts);
+        }).join('');
+    
+        document.getElementById(listId).innerHTML = html || '<div class="no-data">Alles i.O.</div>';
+        document.getElementById(countId).innerHTML = `<span class="time-badge">${formatTime(colMin)}</span>`;
+        return colMin;
+    }
+
+    function renderColKw(listId, countId, keys) {
+        let colMin = 0; 
+        const week = getWeek(); 
+        
+        const html = keys.map(key => {
+            const cfg = state.maintConfig[key]; if(!cfg) return '';
+            
+            return (cfg.machines || []).map(id => {
+                const dataRoot = state.maintenanceStateKW && state.maintenanceStateKW[key] 
+                               ? state.maintenanceStateKW[key] 
+                               : (state.maintenanceState[key] || {});
+
+                const cyc = (dataRoot.extraCycles && dataRoot.extraCycles[id]) || 0;
+                
+                // Prüfen ob Schritte definiert sind, sonst Fallback
+                const stepDef = cfg.steps && cfg.steps[cyc];
+                const isReset = !stepDef;
+                
+                const targetKW = isReset ? (cfg.yearlyResetWeek || 52) : stepDef.target;
+                const rest = targetKW - week;
+                const fullMachineId = (cfg.prefix || '') + id;
+                checkUndLogStatus(fullMachineId, rest, cfg.warnWeeks || 4);
+    
+                // Filter: Nur anzeigen, wenn Warnwoche erreicht
+                if (rest > (cfg.warnWeeks || 4)) return null;
+                
+                const pkgName = isReset ? "JAHRES-RESET" : stepDef.pkg;
+                const dur = getDuration(pkgName, cfg.times);
+                colMin += dur;
+    
+                // Farblogik
+                let urgentClass = '';
+                if (rest < 0) urgentClass = 'overdue';
+                else if (rest === 0) urgentClass = 'critical';
+    
+                const statusText = rest < 0 
+                    ? `fällig seit KW ${targetKW} (Aktuell: ${week})` 
+                    : `fällig in KW ${targetKW}`;
+                
+                return buildCard(cfg.prefix || '', id, statusText, pkgName, dur, isReset, null, key, urgentClass);
+
+            }).filter(x=>x).join('');
+        }).join('');
+    
+        document.getElementById(listId).innerHTML = html || '<div class="no-data">Alles i.O.</div>';
+        document.getElementById(countId).innerHTML = `<span class="time-badge">${formatTime(colMin)}</span>`;
+        return colMin;
+    }
+
+    function buildCard(pre, id, rest, pkg, dur, isReset, rawTotal, kwKey, urgentClass) {
+        const fullId = pre + id;
+        const ass = state.assignments[fullId] || "";
+        
+        // Die Farbe wird nun primär über urgentClass (aus der render-Funktion) gesteuert,
+        // ansonsten fällt sie auf den Standard (overdue/warning) zurück.
+        const cls = urgentClass ? urgentClass : (parseInt(rest) <= 0 ? 'overdue' : 'warning');
+    
+        return `<div class="card ${cls} ${ass ? 'in-progress' : ''}">
+            <div class="card-info" style="display: block; text-align: left; padding: 2px 5px;">
+                <div class="m-id" style="font-weight: bold; font-size: 1.1em;">${fullId || rest}</div>
+                ${fullId ? `<div class="m-rest" style="font-size: 0.75em; margin-top: 2px;">${rest}</div>` : ''}
+            </div>
+            <div style="font-size:0.85em; margin: 5px 5px; text-align: left;">${pkg} (ca. ${dur}m)</div>
+            <div class="card-actions">
+                <select onchange="handleAssignmentChange('${fullId}', this.value)" ${!isAssignmentUnlocked ? 'disabled' : ''} style="${!isAssignmentUnlocked ? 'background-color:#f0f0f0; cursor:not-allowed;' : ''}">
+                    <option value="">--</option>
+                    ${(state.config.einstellerListe || []).map(e => `<option value="${e}" ${ass===e?'selected':''}>${e}</option>`).join('')}
+                </select>
+                <button class="btn-done ${isReset?'reset-mode':''}" ${!auth.currentUser ? 'disabled' : ''} 
+                    onclick="handleMaint('${pre}','${id}',${isReset},${rawTotal},${kwKey ? `'${kwKey}'` : 'null'})">${isReset?'🔄':'✅'}</button>
+            </div>
+        </div>`;
+    }
+
+    // --- AKTIONEN ---
+    async function handleMaint(pre, id, isReset, rawTotal, kwKey) {
+        if (!auth.currentUser) return;
+        resetLogoutTimer(); 
+        
+        let rootPath = 'maintenanceState'; 
+        let offsetKey = 'agieOffsets';     
+        
+        if (kwKey) {
+            rootPath = `maintenanceStateKW/${kwKey}`;
+        } else {
+            if (pre === 'H-') { rootPath = 'maintenanceStateHE'; offsetKey = 'heOffsets'; }
+            else if (pre === 'L-') { rootPath = 'maintenanceStateLaser'; offsetKey = 'laserOffsets'; }
+            else if (pre === 'U-') { rootPath = 'maintenanceStateUnotron'; offsetKey = 'unotronOffsets'; }
+            else if (pre === 'UA-') { rootPath = 'maintenanceStateUnotronAuto'; offsetKey = 'unotronOffsets'; }
+        }
+
+        try {
+            if (kwKey) {
+                const cyclePath = `${rootPath}/extraCycles/${id}`;
+                if (isReset) {
+                    await db.ref(cyclePath).set(0);
+                } else {
+                    const snap = await db.ref(cyclePath).once('value');
+                    let current = parseInt(snap.val()) || 0;
+                    await db.ref(cyclePath).set(current + 1);
+                }
+            } else {
+                const cyclePath = `${rootPath}/extraCycles/${id}`;
+                const offsetPath = `${rootPath}/${offsetKey}/${id}`;
+
+                if (isReset) {
+                    await db.ref(offsetPath).set(rawTotal);
+                    await db.ref(cyclePath).set(0);
+                } else {
+                    const snap = await db.ref(cyclePath).once('value');
+                    let current = parseInt(snap.val()) || 0;
+                    await db.ref(cyclePath).set(current + 1);
+                }
+            }
+
+            const cleanId = pre + id; 
+            await db.ref(`dashboardAssignments/${cleanId}`).remove();
+            const aktionsTyp = isReset ? 'WP RESET' : 'WARTUNGSSCHRITT ERLEDIGT';
+            schreibeLog(cleanId, aktionsTyp, `Wurde erfolgreich zurückgesetzt/bestätigt.`);
+            
+            console.log(`Erfolg: ${cleanId} in ${rootPath} aktualisiert.`);
+            alert("Wartung erfolgreich gespeichert!");
+
+        } catch (e) {
+            console.error("Fehler beim Speichern:", e);
+            alert("Fehler: " + e.message);
+        }
+    }
+
+    // Auth & Admin Modals
+    function toggleAuthModal() { if(auth.currentUser) auth.signOut(); else document.getElementById('authModal').style.display='flex'; }
+    function closeAuthModal() { document.getElementById('authModal').style.display='none'; }
+    function switchAuthMode() { state.isRegMode = !state.isRegMode; document.getElementById('regFields').style.display = state.isRegMode?'block':'none'; document.getElementById('modalTitle').innerText = state.isRegMode?'Registrieren':'Login'; }
+    async function processAuth() {
+        const iden = document.getElementById('authIdentifier').value.trim();
+        const pass = document.getElementById('authPass').value;
+        try {
+            if(state.isRegMode) {
+                if(document.getElementById('authInvite').value !== state.config.inviteCode) throw new Error("Code falsch");
+                await auth.createUserWithEmailAndPassword(document.getElementById('authEmail').value, pass);
+                await db.ref(`usernames/${iden.toLowerCase()}`).set(document.getElementById('authEmail').value);
+            } else {
+                let mail = iden; if(!iden.includes('@')) mail = (await db.ref(`usernames/${iden.toLowerCase()}`).once('value')).val();
+                await auth.signInWithEmailAndPassword(mail, pass);
+            }
+            closeAuthModal();
+        } catch(e) { alert(e.message); }
+    }
+    function openAdminModal() { document.getElementById('adminModal').style.display='flex'; }
+    function closeAdminModal() { document.getElementById('adminModal').style.display='none'; }
+    async function checkAdminPW() { if(document.getElementById('AdminPWInput').value === state.config.AdminPW) { document.getElementById('adminLogin').style.display='none'; document.getElementById('adminContent').style.display='block'; renderAdminList(); } }
+    function renderAdminList() { document.getElementById('adminEinstellerList').innerHTML = (state.config.einstellerListe || []).map(e => `<div>${e} <span style="color:red; cursor:pointer;" onclick="removeEinsteller('${e}')">[X]</span></div>`).join(''); }
+    async function addEinsteller() { const val = document.getElementById('newEinsteller').value.trim(); if(val) { await db.ref('config/einstellerListe').set([...(state.config.einstellerListe || []), val]); renderAdminList(); } }
+    async function removeEinsteller(name) { await db.ref('config/einstellerListe').set(state.config.einstellerListe.filter(e => e !== name)); renderAdminList(); }
+    
+    // --- LOG DOWNLOAD LOGIK ---
+    async function promptAdminForLog() {
+        const eingabe = prompt("Bitte Admin-Passwort eingeben, um das Logbuch herunterzuladen:");
+        
+        if (eingabe === null) return; 
+        
+        if (eingabe === state.config.AdminPW) {
+            await downloadLogsCSV();
+        } else {
+            alert("Falsches Passwort! Download verweigert.");
+        }
+    }
+
+    async function downloadLogsCSV() {
+        try {
+            const snap = await db.ref('wartungsLogs').once('value');
+            const logs = snap.val();
+            
+            if (!logs) {
+                alert("Es sind noch keine Log-Einträge vorhanden.");
+                return;
+            }
+
+            let csvContent = "Datum,Uhrzeit,Maschine,Aktion,Benutzer,Details\n";
+            const logArray = Object.values(logs).sort((a, b) => new Date(b.zeit) - new Date(a.zeit));
+
+            logArray.forEach(log => {
+                const dateObj = new Date(log.zeit);
+                const dateStr = dateObj.toLocaleDateString('de-DE'); 
+                const timeStr = dateObj.toLocaleTimeString('de-DE'); 
+                
+                const maschine = `"${log.maschine || ''}"`;
+                const aktion = `"${log.aktion || ''}"`;
+                const user = `"${log.benutzer || ''}"`;
+                const details = `"${(log.details || '').replace(/"/g, '""')}"`;
+                
+                csvContent += `${dateStr},${timeStr},${maschine},${aktion},${user},${details}\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            
+            const fileDate = new Date().toISOString().split('T')[0];
+            link.setAttribute("download", `WartungsHistorie_${fileDate}.csv`);
+            
+            document.body.appendChild(link);
+            link.click(); 
+            document.body.removeChild(link); 
+            
+        } catch(e) {
+            console.error("Fehler beim Log-Download:", e);
+            alert("Fehler beim Erstellen der Datei: " + e.message);
+        }
+    }
+    
+</script>
+</body>
+</html>
