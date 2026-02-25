@@ -532,7 +532,10 @@
     
         // HTML generieren
         const html = items.map(item => {
-            colMin += item.dur;
+            // Zeit nur addieren, wenn die Maschine fällig (0) oder überfällig (<0) ist
+            if (item.rest <= 0) {
+                colMin += item.dur;
+            }
             return buildCard(prefix, item.sId, item.rest, item.pkg, item.dur, item.isReset, item.totalParts);
         }).join('');
     
@@ -569,7 +572,11 @@
                 
                 const pkgName = isReset ? "JAHRES-RESET" : stepDef.pkg;
                 const dur = getDuration(pkgName, cfg.times);
-                colMin += dur;
+                
+                // Zeit nur addieren, wenn die Maschine fällig (0) oder überfällig (<0) ist
+                if (rest <= 0) {
+                    colMin += dur;
+                }
     
                 // Farblogik
                 let urgentClass = '';
